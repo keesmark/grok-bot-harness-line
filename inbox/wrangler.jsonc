@@ -17,10 +17,7 @@
     // UTC の 18 時 = 日本時間の午前 3 時
     "crons": ["0 18 * * *"]
   },
-  "vars": {
-    // 届いたメッセージを残す日数。空なら消さない。ダッシュボードで変えた値は、次のデプロイでも残す（keep_vars）
-    "RETENTION_DAYS": ""
-  },
+  // RETENTION_DAYS（残す日数）は既定で置かない＝消さない。ダッシュボードで足した値は、次のデプロイでも残す
   "keep_vars": true,
   "observability": { "enabled": true }
 }

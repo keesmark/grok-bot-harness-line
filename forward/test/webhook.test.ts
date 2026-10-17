@@ -1,32 +1,34 @@
-import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
+import { handleWebhook } from "../src/webhook";
 
 const encoder = new TextEncoder();
+const SECRET = "test-channel-secret";
+const HOSTS = ["grok-bot.example"];
+const TARGET = "https://grok-bot.example/webhook/abc";
 
-async function sign(body: string, secret = env.CHANNEL_SECRET!): Promise<string> {
+async function sign(body: string, secret = SECRET): Promise<string> {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(body)));
   return btoa(String.fromCharCode(...mac));
 }
 
-async function call(request: Request, overrides: Partial<Env> = {}): Promise<Response> {
-  const ctx = createExecutionContext();
-  const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, ...overrides }, ctx);
-  await waitOnExecutionContext(ctx);
-  return response;
+function webhookUrl(params: Record<string, string> = { url: TARGET, token: "send-key" }): string {
+  return `https://relay.example/webhook?${new URLSearchParams(params)}`;
 }
 
-async function post(body: string, signature?: string, overrides: Partial<Env> = {}): Promise<Response> {
-  return call(
-    new Request("https://relay.example/webhook", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Line-Signature": signature ?? (await sign(body)) },
-      body,
-    }),
-    overrides,
-  );
+async function post(
+  body: string,
+  { env = {}, url = webhookUrl(), signature }: { env?: Env; url?: string; signature?: string } = {},
+): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (signature !== undefined) headers["X-Line-Signature"] = signature;
+  const ctx = createExecutionContext();
+  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), env, ctx, HOSTS);
+  await waitOnExecutionContext(ctx);
+  return response;
 }
 
 const BODY = JSON.stringify({
@@ -43,34 +45,44 @@ describe("/webhook（forward）", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("正しい署名なら200を返し、本文をそのまま送信キー付きで流す", async () => {
+  it("クエリの url に、token を Bearer で付けて本文をそのまま流す", async () => {
     expect((await post(BODY)).status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://grok-bot.example/webhook");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer test-send-key");
+    expect(url).toBe(TARGET);
+    expect(init.headers).toEqual({ "Content-Type": "application/json", Authorization: "Bearer send-key" });
     expect(new TextDecoder().decode(init.body as Uint8Array)).toBe(BODY);
   });
 
-  it("ヘッダー名を変えると、そのヘッダーに送信キーをそのまま入れる", async () => {
-    await post(BODY, undefined, { GROK_WEBHOOK_KEY_HEADER: "X-Api-Key" });
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.headers).toMatchObject({ "X-Api-Key": "test-send-key" });
-    expect(init.headers).not.toHaveProperty("Authorization");
-  });
-
-  it("送信キーがなければ、ヘッダーを付けずに URL のまま流す", async () => {
-    const url = "https://grok-bot.example/webhook?token=abc";
-    expect((await post(BODY, undefined, { GROK_WEBHOOK_URL: url, GROK_WEBHOOK_KEY: "" })).status).toBe(200);
-    const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(calledUrl).toBe(url);
-    expect(init.headers).toEqual({ "Content-Type": "application/json" });
-  });
-
-  it("署名が合わなければ401で、流さない", async () => {
-    expect((await post(BODY, "a".repeat(43))).status).toBe(401);
-    expect((await post(BODY, await sign(BODY, "other"))).status).toBe(401);
+  it("url か token がない、url が読めないときは400で、流さない", async () => {
+    expect((await post(BODY, { url: webhookUrl({ url: TARGET }) })).status).toBe(400);
+    expect((await post(BODY, { url: webhookUrl({ token: "k" }) })).status).toBe(400);
+    expect((await post(BODY, { url: webhookUrl({ url: "not a url", token: "k" }) })).status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Grok Bot 以外の宛先や https でない宛先は403で、流さない", async () => {
+    expect((await post(BODY, { url: webhookUrl({ url: "https://evil.example/x", token: "k" }) })).status).toBe(403);
+    expect((await post(BODY, { url: webhookUrl({ url: "https://grok-bot.example.evil.example/x", token: "k" }) })).status).toBe(403);
+    expect((await post(BODY, { url: webhookUrl({ url: "http://grok-bot.example/x", token: "k" }) })).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("宛先が決まっていなければ、どこにも流さない", async () => {
+    const ctx = createExecutionContext();
+    const request = new Request(webhookUrl(), { method: "POST", body: BODY });
+    expect((await handleWebhook(request, {}, ctx, [])).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("CHANNEL_SECRET があれば署名を確かめ、合わなければ401で流さない", async () => {
+    const env = { CHANNEL_SECRET: SECRET };
+    expect((await post(BODY, { env })).status).toBe(401);
+    expect((await post(BODY, { env, signature: "a".repeat(43) })).status).toBe(401);
+    expect((await post(BODY, { env, signature: await sign(BODY, "other") })).status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await post(BODY, { env, signature: await sign(BODY) })).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("イベントが空なら200で、流さない", async () => {
@@ -82,31 +94,21 @@ describe("/webhook（forward）", () => {
     expect((await post("{oops")).status).toBe(400);
   });
 
-  it("設定が足りないか、転送先が https でなければ503", async () => {
-    expect((await post(BODY, undefined, { CHANNEL_SECRET: "" })).status).toBe(503);
-    expect((await post(BODY, undefined, { GROK_WEBHOOK_URL: "http://grok-bot.example/webhook" })).status).toBe(503);
-    expect((await post(BODY, undefined, { GROK_WEBHOOK_URL: "not a url" })).status).toBe(503);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   it("転送先がエラーでも LINE には200を返す", async () => {
     fetchMock.mockImplementation(async () => new Response(null, { status: 401 }));
     expect((await post(BODY)).status).toBe(200);
   });
 
   it("上限を超える本文は413", async () => {
-    const response = await call(
-      new Request("https://relay.example/webhook", {
-        method: "POST",
-        headers: { "X-Line-Signature": await sign(BODY), "Content-Length": String(2 * 1024 * 1024) },
-        body: BODY,
-      }),
-    );
-    expect(response.status).toBe(413);
+    const ctx = createExecutionContext();
+    const request = new Request(webhookUrl(), { method: "POST", headers: { "Content-Length": String(2 * 1024 * 1024) }, body: BODY });
+    expect((await handleWebhook(request, {}, ctx, HOSTS)).status).toBe(413);
   });
 
   it("POST 以外は405、知らないパスは404", async () => {
-    expect((await call(new Request("https://relay.example/webhook"))).status).toBe(405);
-    expect((await call(new Request("https://relay.example/x"))).status).toBe(404);
+    const call = (url: string) =>
+      worker.fetch(new Request(url) as Request<unknown, IncomingRequestCfProperties>, {}, createExecutionContext());
+    expect((await call(webhookUrl())).status).toBe(405);
+    expect((await call("https://relay.example/x")).status).toBe(404);
   });
 });

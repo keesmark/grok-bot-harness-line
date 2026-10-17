@@ -1,6 +1,6 @@
-// POST /webhook。署名を確かめてから、本文をそのまま Grok Bot の Webhook に流す。何も保存しない。
+// POST /webhook。?url=…&token=… の宛先に、本文をそのまま流す。何も保存しない。署名は CHANNEL_SECRET があるときだけ確かめる。
 import { BodyTooLargeError, readLimitedBody } from "./body";
-import { type Env, type ForwardTarget, forwardTarget } from "./env";
+import { type Env, type ForwardTarget, targetFromQuery } from "./env";
 import { hasSignatureShape, verifySignature } from "./signature";
 
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
@@ -19,16 +19,22 @@ async function forward(target: ForwardTarget, body: Uint8Array, events: number):
   }
 }
 
-export async function handleWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+export async function handleWebhook(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  hosts?: readonly string[],
+): Promise<Response> {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
-  const target = forwardTarget(env);
-  if (!env.CHANNEL_SECRET || target === null) {
-    console.error("webhook: 設定不足（CHANNEL_SECRET / GROK_WEBHOOK_URL）");
-    return new Response(null, { status: 503 });
+  // URL にトークンが入るので、URL そのものはログに出さない。
+  const result = targetFromQuery(new URL(request.url), hosts);
+  if (!result.ok) {
+    console.warn("webhook: 転送先の指定が正しくない", { status: result.status });
+    return new Response(null, { status: result.status });
   }
 
   const signature = request.headers.get("X-Line-Signature");
-  if (!hasSignatureShape(signature)) {
+  if (env.CHANNEL_SECRET && !hasSignatureShape(signature)) {
     console.warn("webhook: 署名の形が違う");
     return new Response(null, { status: 401 });
   }
@@ -44,7 +50,7 @@ export async function handleWebhook(request: Request, env: Env, ctx: ExecutionCo
     throw error;
   }
 
-  if (!(await verifySignature(env.CHANNEL_SECRET, body, signature))) {
+  if (env.CHANNEL_SECRET && !(await verifySignature(env.CHANNEL_SECRET, body, signature!))) {
     console.warn("webhook: 署名が合わない");
     return new Response(null, { status: 401 });
   }
@@ -59,6 +65,6 @@ export async function handleWebhook(request: Request, env: Env, ctx: ExecutionCo
   }
 
   // 「検証」ボタンなど、イベントが空のものは流さない。
-  if (events.length > 0) ctx.waitUntil(forward(target, body, events.length));
+  if (events.length > 0) ctx.waitUntil(forward(result.target, body, events.length));
   return new Response(null, { status: 200 });
 }

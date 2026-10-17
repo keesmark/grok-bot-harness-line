@@ -1,31 +1,35 @@
 export interface Env {
+  // 任意。入れたときだけ LINE の署名を確かめる。
   CHANNEL_SECRET?: string;
-  GROK_WEBHOOK_URL?: string;
-  GROK_WEBHOOK_KEY?: string;
-  // 送信キーを入れるヘッダーの名前。Authorization のときは "Bearer " を付ける
-  GROK_WEBHOOK_KEY_HEADER?: string;
 }
+
+// 流してよい Grok Bot の Webhook のドメイン。踏み台にされないよう、ここ以外には流さない。
+export const GROK_BOT_HOSTS: readonly string[] = [];
 
 export interface ForwardTarget {
   url: string;
   headers: Record<string, string>;
 }
 
-// 転送先が https のときだけ転送先を返す。
-// 送信キーは任意。URL にトークンが付いている転送先なら、キーを入れなくてよい。
-export function forwardTarget(env: Env): ForwardTarget | null {
-  if (!env.GROK_WEBHOOK_URL) return null;
+export type TargetResult = { ok: true; target: ForwardTarget } | { ok: false; status: 400 | 403 };
+
+// LINE に登録した URL の ?url=…&token=… から転送先を作る。
+export function targetFromQuery(requestUrl: URL, hosts: readonly string[] = GROK_BOT_HOSTS): TargetResult {
+  const raw = requestUrl.searchParams.get("url");
+  const token = requestUrl.searchParams.get("token");
+  if (!raw || !token) return { ok: false, status: 400 };
   let url: URL;
   try {
-    url = new URL(env.GROK_WEBHOOK_URL);
+    url = new URL(raw);
   } catch {
-    return null;
+    return { ok: false, status: 400 };
   }
-  if (url.protocol !== "https:") return null;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (env.GROK_WEBHOOK_KEY) {
-    const name = env.GROK_WEBHOOK_KEY_HEADER?.trim() || "Authorization";
-    headers[name] = name.toLowerCase() === "authorization" ? `Bearer ${env.GROK_WEBHOOK_KEY}` : env.GROK_WEBHOOK_KEY;
-  }
-  return { url: url.toString(), headers };
+  if (url.protocol !== "https:" || !hosts.includes(url.hostname)) return { ok: false, status: 403 };
+  return {
+    ok: true,
+    target: {
+      url: url.toString(),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    },
+  };
 }

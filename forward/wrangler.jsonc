@@ -4,10 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
   "workers_dev": true,
-  "vars": {
-    // Grok Bot の送信キーを入れるヘッダーの名前。Authorization のときは "Bearer " を付けて送る
-    "GROK_WEBHOOK_KEY_HEADER": "Authorization"
-  },
-  "keep_vars": true,
-  "observability": { "enabled": true }
+  // LINE に登録する URL にトークンが入るので、リクエストのログは残さない
+  "observability": { "enabled": false }
 }

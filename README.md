@@ -10,28 +10,29 @@ LINE の Webhook は送信キーのヘッダーを付けられないので、こ
 
 - 何も保存しません。届いた本文を、そのまま Grok Bot に流すだけです。
 - LINE へ送信する機能はありません。チャネルアクセストークンも持ちません。
-- デプロイ画面で入れる値はありません。
+- デプロイ画面で入れるのは、この Worker 専用の合言葉 `RELAY_KEY` の1つだけです。
 
 ## 準備するもの
 
 - Messaging API が使える LINE 公式アカウント（[LINE Developers コンソール](https://developers.line.biz/console/)）
 - Grok Bot の Webhook の URL と送信キー
+- 合言葉にする長いランダムな文字列（例: `openssl rand -hex 32` の出力）
 - Cloudflare のアカウント（無料プランで動きます）
 - GitHub のアカウント（ボタンを押すと、このリポジトリがあなたの GitHub に複製されます）
 
 ## つなぎ方
 
-デプロイできたら、LINE Developers コンソールの Webhook URL に次を貼り、「検証」を押して成功を確かめます。
+デプロイ画面で `RELAY_KEY` に合言葉を入れてデプロイします。できたら、LINE Developers コンソールの Webhook URL に次を貼り、「検証」を押して成功を確かめます。
 
 ```
-https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送信キー>
+https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送信キー>&key=<合言葉>
 ```
 
 `url` は URL エンコードしてください。Worker は `token` を `Authorization: Bearer <送信キー>` に付け替えて、本文を LINE から届いたまま `url` に流します。
 
 - Grok Bot の Webhook の URL は `https://api2.cursor.sh/automations/webhook/…` の形です。
 - 流せる宛先は、`cursor.sh` とそのサブドメインの https の URL だけです（`src/env.ts` の `GROK_BOT_DOMAINS`）。パスは問わないので、Grok Bot の URL の形が変わっても動き続けます。ほかの宛先を指定すると 403 になり、どこにも流しません。
-- 送信キーが URL に入るので、リクエストのログは残しません。この URL はチャットなどに貼らないでください。
+- 送信キーと合言葉が URL に入るので、リクエストのログは残しません。この URL はチャットなどに貼らないでください。
 - 「検証」ボタンのようにイベントが空のものは流しません。
 - 流した先がエラーを返しても、LINE には 200 を返します。LINE は再送しないので、そのメッセージは LINE のチャットで確かめてください。
 
@@ -39,18 +40,14 @@ https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送�
 
 この Worker は LINE の署名を確かめません。偽のメッセージを Grok Bot に届けるには送信キー（`token`）が要りますが、送信キーを知っている人は Worker を通さずに Grok Bot へ直接送れるので、Worker で確かめても守りが増えないためです。LINE の `X-Line-Signature` ヘッダーはそのまま Grok Bot に渡すので、必要なら Grok Bot 側で確かめられます。
 
-### 踏み台にされないようにする（任意）
+### 合言葉（RELAY_KEY）について
 
-何も設定しないと、Worker の URL を知った人が、自分の `token` と本文を付けて、あなたの Worker から `cursor.sh` に POST させられます。これを防ぎたいときは、合言葉を1つ決めて Worker のシークレット `RELAY_KEY` に入れ、LINE に登録する URL に `&key=<合言葉>` を足します。
+合言葉がないと、Worker の URL を知った人が、自分の `token` と本文を付けて、あなたの Worker から `cursor.sh` に POST させられます（踏み台）。これを防ぐため、`key` が `RELAY_KEY` と合わないリクエストは 401 にして、どこにも流しません。`RELAY_KEY` が設定されていないときは 500 を返し、何も流しません。
+
+合言葉をあとから変えるときは、次のコマンドか、Cloudflare のダッシュボードで Worker の「設定」→「変数とシークレット」から変え、LINE に登録した URL の `key=` も合わせて変えます。
 
 ```sh
 npx wrangler secret put RELAY_KEY
-```
-
-Cloudflare のダッシュボードで、Worker の「設定」→「変数とシークレット」から足しても構いません。合言葉は推測されにくい長いランダムな文字列にしてください（例: `openssl rand -hex 32`）。`RELAY_KEY` があると、`key` が合わないリクエストは 401 になり、どこにも流しません。
-
-```
-https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送信キー>&key=<合言葉>
 ```
 
 ## 設計
@@ -65,8 +62,8 @@ sequenceDiagram
     participant G as Grok Bot
 
     U->>L: メッセージを送る
-    L->>W: POST /webhook?url=…&token=…<br/>X-Line-Signature 付き
-    W->>W: 宛先と本文を確かめる
+    L->>W: POST /webhook?url=…&token=…&key=…<br/>X-Line-Signature 付き
+    W->>W: 合言葉・宛先・本文を確かめる
     W-->>L: 200（すぐ返す）
     W->>G: POST url<br/>Authorization: Bearer token<br/>X-Line-Signature はそのまま<br/>本文は届いたまま
     G-->>W: 応答（ログには件数と状態だけ残す）
@@ -83,7 +80,9 @@ flowchart TD
     B -- その他 --> N404[404]
     B -- /webhook --> C{POST か}
     C -- いいえ --> N405[405]
-    C -- はい --> K{RELAY_KEY があれば<br/>key が合うか}
+    C -- はい --> S{RELAY_KEY が<br/>設定されているか}
+    S -- いいえ --> N500[500]
+    S -- はい --> K{key が RELAY_KEY と合うか}
     K -- いいえ --> N401[401]
     K -- はい --> D{url と token があり<br/>url が読めるか}
     D -- いいえ --> N400a[400]
@@ -118,6 +117,7 @@ flowchart TD
 
 ```sh
 npm ci
+cp .dev.vars.example .dev.vars  # RELAY_KEY= に好きな値を入れる
 npm test
 npm run coverage
 npm run dev

@@ -1,6 +1,6 @@
 import { BodyTooLargeError, readLimitedBody } from "./body";
 import { type Env, type ForwardTarget, targetFromQuery } from "./env";
-import { relayKeyAccepted } from "./key";
+import { relayKeyMatches } from "./key";
 
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
 
@@ -18,7 +18,11 @@ async function forward(target: ForwardTarget, body: Uint8Array, signature: strin
 export async function handleWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
   const requestUrl = new URL(request.url);
-  if (!(await relayKeyAccepted(requestUrl, env.RELAY_KEY))) {
+  if (!env.RELAY_KEY) {
+    console.error("webhook: RELAY_KEY is not set");
+    return new Response(null, { status: 500 });
+  }
+  if (!(await relayKeyMatches(requestUrl, env.RELAY_KEY))) {
     console.warn("webhook: wrong relay key");
     return new Response(null, { status: 401 });
   }

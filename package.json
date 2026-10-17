@@ -18,5 +18,12 @@
     "typescript": "5.9.3",
     "vitest": "4.1.12",
     "wrangler": "4.151.1"
+  },
+  "cloudflare": {
+    "bindings": {
+      "RELAY_KEY": {
+        "description": "この Worker 専用の合言葉です。推測されにくい長いランダムな文字列を入れてください（例: `openssl rand -hex 32` の出力）。LINE に登録する URL の `key=` にも同じものを入れます。チャットには貼らないでください。"
+      }
+    }
   }
 }

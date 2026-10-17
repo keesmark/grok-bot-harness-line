@@ -6,7 +6,7 @@ export default {
     const { pathname } = new URL(request.url);
     switch (pathname) {
       case "/":
-        return new Response("grok-bot-harness-line forward: ok", { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        return new Response("grok-bot-harness-line: ok", { headers: { "Content-Type": "text/plain; charset=utf-8" } });
       case "/webhook":
         return handleWebhook(request, env, ctx);
       default:

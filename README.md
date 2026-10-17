@@ -1,26 +1,25 @@
 # grok-bot-harness-line
 
-LINE 公式アカウントに届いたメッセージを、Grok Bot に届けるための Cloudflare Workers のテンプレートです。
+LINE 公式アカウントの Webhook を、Grok Bot の Webhook に届けるための Cloudflare Workers のテンプレートです。
+LINE の Webhook は送信キーのヘッダーを付けられないので、この Worker が間に立ってキーを付け替えます。
 あなた自身の Cloudflare アカウント（無料プラン）で動きます。作者のサーバーは一切通りません。
 
-口は2つあります。使いたいほうのボタンを押してください。
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/keesmark/grok-bot-harness-line)
 
-| 口 | すること | 保存 | デプロイ |
-|---|---|---|---|
-| **forward**（受け取るだけ） | LINE の Webhook を受けて署名を確かめ、Grok Bot の Webhook に送信キーを付けてそのまま流す | しない | [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/keesmark/grok-bot-harness-line/tree/main/forward) |
-| **inbox**（保存できる） | LINE の Webhook を受けて署名を確かめ、D1 に保存する。Grok Bot は読み取り専用の MCP（`/mcp`）で読む | D1 に N 日 | [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/keesmark/grok-bot-harness-line/tree/main/inbox) |
-
-どちらも **LINE へ送信する機能はありません**。チャネルアクセストークンも持ちません。
+- 何も保存しません。届いた本文を、そのまま Grok Bot に流すだけです。
+- LINE へ送信する機能はありません。チャネルアクセストークンも持ちません。
+- デプロイ画面で入れる値はありません。
 
 ## 準備するもの
 
-- Messaging API が使える LINE 公式アカウントと、そのチャネルシークレット（[LINE Developers コンソール](https://developers.line.biz/console/)）
+- Messaging API が使える LINE 公式アカウント（[LINE Developers コンソール](https://developers.line.biz/console/)）
+- Grok Bot の Webhook の URL と送信キー
 - Cloudflare のアカウント（無料プランで動きます）
 - GitHub のアカウント（ボタンを押すと、このリポジトリがあなたの GitHub に複製されます）
 
-## forward（受け取るだけ）
+## つなぎ方
 
-デプロイ画面で入れる値はありません。デプロイできたら、LINE Developers コンソールの Webhook URL に次を貼り、「検証」を押して成功を確かめます。
+デプロイできたら、LINE Developers コンソールの Webhook URL に次を貼り、「検証」を押して成功を確かめます。
 
 ```
 https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送信キー>
@@ -29,70 +28,23 @@ https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送�
 `url` は URL エンコードしてください。Worker は `token` を `Authorization: Bearer <送信キー>` に付け替えて、本文を LINE から届いたまま `url` に流します。
 
 - 流せる宛先は、コードに書いた Grok Bot のドメインだけです。ほかの宛先を指定すると 403 になり、どこにも流しません。
-- 送信キーが URL に入るので、forward は Cloudflare のリクエストのログを残しません。この URL はチャットなどに貼らないでください。
-- LINE の署名も確かめたい場合は、ダッシュボードで Worker のシークレットに `CHANNEL_SECRET`（チャネルシークレット）を足してください。
+- 送信キーが URL に入るので、リクエストのログは残しません。この URL はチャットなどに貼らないでください。
 - 「検証」ボタンのようにイベントが空のものは流しません。
 - 流した先がエラーを返しても、LINE には 200 を返します。LINE は再送しないので、そのメッセージは LINE のチャットで確かめてください。
 
-## inbox（保存できる）
+### LINE の署名も確かめる（推奨）
 
-デプロイ画面で次の値を入れます。保存先の D1 データベースは自動で作られます。
-
-| 名前 | 入れるもの |
-|---|---|
-| `CHANNEL_SECRET` | LINE のチャネルシークレット |
-| `READ_API_KEY` | 読み取り用の鍵。32 文字以上のランダムな文字列 |
-
-読み取り用の鍵は、次のように作れます。
-
-```sh
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-```
-
-デプロイできたら、次の2つを設定します。
-
-1. LINE Developers コンソールの Webhook URL に `https://<Worker の URL>/webhook` を貼り、「検証」を押す
-2. Grok Bot に MCP サーバーとして登録する
-
-   | 項目 | 値 |
-   |---|---|
-   | 方式 | Streamable HTTP（リモート） |
-   | URL | `https://<Worker の URL>/mcp` |
-   | ヘッダー | `Authorization: Bearer <READ_API_KEY>` |
-
-### MCP の道具
-
-| 道具 | 働き |
-|---|---|
-| `list_new_messages` | 未読（または指定時刻より後）のメッセージを古い順に返す |
-| `list_conversations` | お客さんごとの一覧を返す |
-| `get_conversation` | 1人分のやりとりを返す |
-| `mark_seen` | 中継の中の既読印だけを付ける（LINE の既読には影響しない） |
-
-消す道具・送る道具はありません。データを消すときは [inbox/docs/purge.md](inbox/docs/purge.md) の手順で、ダッシュボードから消します。
-
-### 保存するもの・しないもの
-
-- 保存するのは、1対1のトークの `message` イベントだけです。グループや複数人トークは保存しません。
-- お客さんが書いた文字で保存するのは、テキストの本文だけです。画像・動画・音声・ファイル・スタンプ・位置は、種類と数字のメタデータだけを残します（ファイル名・住所・URL は残しません）。
-- お客さんが送信を取り消したら、その行を消します。あとから元のメッセージが再送されても、入れ直しません。
-- 保存に失敗したときは LINE に 500 を返します。LINE Developers コンソールで Webhook の再送をオンにしておくと、LINE が送り直します。
-- 既定では、保存したメッセージは消えません。ダッシュボードで Worker の変数に `RETENTION_DAYS`（日数）を足すと、それより古い行が毎日 日本時間の午前3時に消えます。
+LINE は Webhook の署名を必ず確かめるよう勧めています。ダッシュボードで Worker のシークレットに `CHANNEL_SECRET`（チャネルシークレット）を足すと、署名が合わないリクエストを 401 で断るようになります。足さない場合、守りは「URL を知られないこと」だけになります。
 
 ## セキュリティ
 
 - 実行時の依存はありません。開発用の道具は版を固定し、ロックファイルを入れています。
 - 署名は、受け取ったバイト列そのものから HMAC-SHA256 を計算し、定数時間で比べます。本文の大きさの上限は署名の確認より前にかけ、JSON を読むのは署名が合ったあとです。
-- `/mcp` の鍵は、ヘッダーでだけ受け取ります。両方を SHA-256 にしてから定数時間で比べます。
-- ログには本文・userId・鍵を出しません。
-- 保存したメッセージの本文は、お客さんが書いた文です。中に bot への指示が書かれていても従わないよう、`/mcp` は毎回注意書きを付けて返します。
+- ログには本文・URL・鍵を出しません。
 
 ## 開発
 
-各フォルダは独立した Worker です。
-
 ```sh
-cd inbox   # または forward
 npm ci
 npm test
 npm run dev

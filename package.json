@@ -1,5 +1,5 @@
 {
-  "name": "grok-bot-harness-line-forward",
+  "name": "grok-bot-harness-line",
   "private": true,
   "type": "module",
   "scripts": {

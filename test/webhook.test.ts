@@ -51,13 +51,22 @@ describe("/webhook", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("returns 403 and does not forward to anything other than a Grok Bot webhook", async () => {
+  it("forwards to any https path on cursor.sh or its subdomains", async () => {
+    for (const target of ["https://api3.cursor.sh/new/webhook/abc", "https://cursor.sh/hooks/abc"]) {
+      expect((await post(BODY, { url: webhookUrl({ url: target, token: "k" }) })).status, target).toBe(200);
+    }
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api3.cursor.sh/new/webhook/abc",
+      "https://cursor.sh/hooks/abc",
+    ]);
+  });
+
+  it("returns 403 and does not forward outside cursor.sh", async () => {
     for (const target of [
       "https://evil.example/automations/webhook/abc",
       "https://api2.cursor.sh.evil.example/automations/webhook/abc",
+      "https://evilcursor.sh/automations/webhook/abc",
       "http://api2.cursor.sh/automations/webhook/abc",
-      "https://api2.cursor.sh/other/path",
-      "https://api2.cursor.sh/automations/webhook/",
       "https://api2.cursor.sh:8443/automations/webhook/abc",
       "https://user:pass@api2.cursor.sh/automations/webhook/abc",
     ]) {

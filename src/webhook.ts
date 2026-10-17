@@ -1,5 +1,5 @@
 import { BodyTooLargeError, readLimitedBody } from "./body";
-import { type AllowedTarget, type ForwardTarget, targetFromQuery } from "./env";
+import { type ForwardTarget, targetFromQuery } from "./env";
 
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
 
@@ -14,13 +14,9 @@ async function forward(target: ForwardTarget, body: Uint8Array, signature: strin
   }
 }
 
-export async function handleWebhook(
-  request: Request,
-  ctx: ExecutionContext,
-  allowed?: readonly AllowedTarget[],
-): Promise<Response> {
+export async function handleWebhook(request: Request, ctx: ExecutionContext): Promise<Response> {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
-  const result = targetFromQuery(new URL(request.url), allowed);
+  const result = targetFromQuery(new URL(request.url));
   if (!result.ok) {
     console.warn("webhook: invalid target", { status: result.status });
     return new Response(null, { status: result.status });

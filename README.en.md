@@ -30,7 +30,7 @@ https://<your Worker URL>/webhook?url=<Grok Bot webhook URL>&token=<key>
 URL-encode `url`. The Worker sends `token` as `Authorization: Bearer <key>` and posts the body to `url` exactly as LINE sent it.
 
 - A Grok Bot webhook URL looks like `https://api2.cursor.sh/automations/webhook/…`.
-- Only URLs of that form are allowed as destinations (`GROK_BOT_TARGETS` in `src/env.ts`). Any other destination gets a 403 and nothing is forwarded.
+- Only https URLs on `cursor.sh` and its subdomains are allowed as destinations (`GROK_BOT_DOMAINS` in `src/env.ts`). The path is not checked, so the Worker keeps working if the shape of Grok Bot URLs changes. Any other destination gets a 403 and nothing is forwarded.
 - The key is part of the URL, so request logs are turned off. Do not paste this URL into chats or other places.
 - Requests with no events, such as the "Verify" button, are not forwarded.
 - The Worker returns 200 to LINE even when the destination returns an error. LINE does not retry, so check that message in the LINE chat.
@@ -71,7 +71,7 @@ flowchart TD
     C -- no --> N405[405]
     C -- yes --> D{url and token present<br/>and url parses?}
     D -- no --> N400a[400]
-    D -- yes --> E{Destination is a Grok Bot webhook?<br/>https, no port, no user info<br/>api2.cursor.sh/automations/webhook/…}
+    D -- yes --> E{Destination on cursor.sh?<br/>https, no port, no user info<br/>cursor.sh or a subdomain}
     E -- no --> N403[403]
     E -- yes --> F{Body 1 MiB or less?}
     F -- no --> N413[413]

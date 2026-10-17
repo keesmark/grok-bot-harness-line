@@ -1,11 +1,4 @@
-export interface AllowedTarget {
-  host: string;
-  pathPrefix: string;
-}
-
-export const GROK_BOT_TARGETS: readonly AllowedTarget[] = [
-  { host: "api2.cursor.sh", pathPrefix: "/automations/webhook/" },
-];
+export const GROK_BOT_DOMAINS: readonly string[] = ["cursor.sh"];
 
 export interface ForwardTarget {
   url: string;
@@ -14,10 +7,7 @@ export interface ForwardTarget {
 
 export type TargetResult = { ok: true; target: ForwardTarget } | { ok: false; status: 400 | 403 };
 
-export function targetFromQuery(
-  requestUrl: URL,
-  allowed: readonly AllowedTarget[] = GROK_BOT_TARGETS,
-): TargetResult {
+export function targetFromQuery(requestUrl: URL, domains: readonly string[] = GROK_BOT_DOMAINS): TargetResult {
   const raw = requestUrl.searchParams.get("url");
   const token = requestUrl.searchParams.get("token");
   if (!raw || !token) return { ok: false, status: 400 };
@@ -27,12 +17,7 @@ export function targetFromQuery(
   } catch {
     return { ok: false, status: 400 };
   }
-  const permitted = allowed.some(
-    (target) =>
-      url.hostname === target.host &&
-      url.pathname.startsWith(target.pathPrefix) &&
-      url.pathname.length > target.pathPrefix.length,
-  );
+  const permitted = domains.some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`));
   if (url.protocol !== "https:" || url.port !== "" || url.username !== "" || url.password !== "" || !permitted) {
     return { ok: false, status: 403 };
   }

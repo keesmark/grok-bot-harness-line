@@ -74,11 +74,15 @@ describe("/webhook", () => {
 
   it("returns 200 without forwarding when there are no events", async () => {
     expect((await post(JSON.stringify({ destination: "U", events: [] }))).status).toBe(200);
+    expect((await post(JSON.stringify({ destination: "U" }))).status).toBe(200);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("returns 400 for invalid JSON", async () => {
+  it("returns 400 for invalid JSON or an empty body", async () => {
     expect((await post("{oops")).status).toBe(400);
+    const request = new Request(webhookUrl(), { method: "POST" });
+    expect((await handleWebhook(request, createExecutionContext())).status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("returns 200 to LINE even when the upstream fails", async () => {
@@ -87,10 +91,12 @@ describe("/webhook", () => {
   });
 
   it("returns 200 to LINE even when the upstream is unreachable", async () => {
-    fetchMock.mockImplementation(async () => {
-      throw new TypeError("network error");
-    });
-    expect((await post(BODY)).status).toBe(200);
+    for (const thrown of [new TypeError("network error"), "not an Error"]) {
+      fetchMock.mockImplementation(async () => {
+        throw thrown;
+      });
+      expect((await post(BODY)).status).toBe(200);
+    }
   });
 
   it("returns 413 for a body over the limit", async () => {
@@ -111,6 +117,17 @@ describe("/webhook", () => {
     const request = new Request(webhookUrl(), { method: "POST", body: stream });
     expect(request.headers.get("Content-Length")).toBeNull();
     expect((await handleWebhook(request, createExecutionContext())).status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails the request when the body stream breaks", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error("connection lost"));
+      },
+    });
+    const request = new Request(webhookUrl(), { method: "POST", body: stream });
+    await expect(handleWebhook(request, createExecutionContext())).rejects.toThrow("connection lost");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

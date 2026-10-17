@@ -39,6 +39,58 @@ https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送�
 
 この Worker は LINE の署名を確かめません。偽のメッセージを Grok Bot に届けるには送信キー（`token`）が要りますが、送信キーを知っている人は Worker を通さずに Grok Bot へ直接送れるので、Worker で確かめても守りが増えないためです。LINE の `X-Line-Signature` ヘッダーはそのまま Grok Bot に渡すので、必要なら Grok Bot 側で確かめられます。
 
+## 設計
+
+### 全体の流れ
+
+```mermaid
+sequenceDiagram
+    participant U as LINE ユーザー
+    participant L as LINE Platform
+    participant W as Worker（あなたの Cloudflare）
+    participant G as Grok Bot
+
+    U->>L: メッセージを送る
+    L->>W: POST /webhook?url=…&token=…<br/>X-Line-Signature 付き
+    W->>W: 宛先と本文を確かめる
+    W-->>L: 200（すぐ返す）
+    W->>G: POST url<br/>Authorization: Bearer token<br/>X-Line-Signature はそのまま<br/>本文は届いたまま
+    G-->>W: 応答（ログには件数と状態だけ残す）
+```
+
+LINE には先に 200 を返し、Grok Bot への転送はその後ろで行います（`ctx.waitUntil`）。Worker は何も保存しません。
+
+### リクエストの判定
+
+```mermaid
+flowchart TD
+    A[リクエスト] --> B{パス}
+    B -- / --> OK[200 ok]
+    B -- その他 --> N404[404]
+    B -- /webhook --> C{POST か}
+    C -- いいえ --> N405[405]
+    C -- はい --> D{url と token があり<br/>url が読めるか}
+    D -- いいえ --> N400a[400]
+    D -- はい --> E{宛先が Grok Bot の Webhook か<br/>https・ポートなし・ユーザー情報なし<br/>api2.cursor.sh/automations/webhook/…}
+    E -- いいえ --> N403[403]
+    E -- はい --> F{本文が 1MiB 以下か}
+    F -- いいえ --> N413[413]
+    F -- はい --> G{JSON として読めるか}
+    G -- いいえ --> N400b[400]
+    G -- はい --> H{events が空か}
+    H -- 空 --> R200a[200・転送しない]
+    H -- ある --> R200b[200・Grok Bot へ転送]
+```
+
+### ファイル
+
+| ファイル | 役目 |
+| --- | --- |
+| `src/index.ts` | パスごとの振り分け |
+| `src/webhook.ts` | `/webhook` の処理と Grok Bot への転送 |
+| `src/env.ts` | 転送してよい宛先の一覧と、`url`・`token` からの宛先づくり |
+| `src/body.ts` | 本文を上限つきで読む |
+
 ## セキュリティ
 
 - 実行時の依存はありません。開発用の道具は版を固定し、ロックファイルを入れています。

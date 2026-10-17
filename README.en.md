@@ -39,6 +39,58 @@ URL-encode `url`. The Worker sends `token` as `Authorization: Bearer <key>` and 
 
 This Worker does not verify the LINE signature. Sending a fake message to Grok Bot through the Worker requires the key (`token`), and anyone with the key can call Grok Bot directly without the Worker, so verifying here adds no protection. The `X-Line-Signature` header is passed through to Grok Bot unchanged, so Grok Bot can verify it if needed.
 
+## Design
+
+### Overall flow
+
+```mermaid
+sequenceDiagram
+    participant U as LINE user
+    participant L as LINE Platform
+    participant W as Worker (your Cloudflare)
+    participant G as Grok Bot
+
+    U->>L: Sends a message
+    L->>W: POST /webhook?url=…&token=…<br/>with X-Line-Signature
+    W->>W: Check the destination and body
+    W-->>L: 200 (right away)
+    W->>G: POST url<br/>Authorization: Bearer token<br/>X-Line-Signature unchanged<br/>body as received
+    G-->>W: Response (logs keep only the count and status)
+```
+
+The Worker returns 200 to LINE first and forwards to Grok Bot in the background (`ctx.waitUntil`). It stores nothing.
+
+### Request handling
+
+```mermaid
+flowchart TD
+    A[Request] --> B{Path}
+    B -- / --> OK[200 ok]
+    B -- other --> N404[404]
+    B -- /webhook --> C{POST?}
+    C -- no --> N405[405]
+    C -- yes --> D{url and token present<br/>and url parses?}
+    D -- no --> N400a[400]
+    D -- yes --> E{Destination is a Grok Bot webhook?<br/>https, no port, no user info<br/>api2.cursor.sh/automations/webhook/…}
+    E -- no --> N403[403]
+    E -- yes --> F{Body 1 MiB or less?}
+    F -- no --> N413[413]
+    F -- yes --> G{Valid JSON?}
+    G -- no --> N400b[400]
+    G -- yes --> H{Any events?}
+    H -- none --> R200a[200, not forwarded]
+    H -- some --> R200b[200, forwarded to Grok Bot]
+```
+
+### Files
+
+| File | Role |
+| --- | --- |
+| `src/index.ts` | Routes requests by path |
+| `src/webhook.ts` | Handles `/webhook` and forwards to Grok Bot |
+| `src/env.ts` | Allowed destinations, and building the destination from `url` and `token` |
+| `src/body.ts` | Reads the body with a size cap |
+
 ## Security
 
 - No runtime dependencies. Development tools are pinned to exact versions with a lockfile.

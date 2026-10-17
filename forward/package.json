@@ -1,0 +1,36 @@
+{
+  "name": "grok-bot-harness-line-forward",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc",
+    "deploy": "wrangler deploy"
+  },
+  "cloudflare": {
+    "bindings": {
+      "CHANNEL_SECRET": {
+        "description": "[LINE Developers コンソール](https://developers.line.biz/console/) のチャネルの **チャネルシークレット** を貼ってください。チャットには貼らないでください。"
+      },
+      "GROK_WEBHOOK_URL": {
+        "description": "Grok Bot の **Webhook の URL** を貼ってください。https で始まるものだけ使えます。"
+      },
+      "GROK_WEBHOOK_KEY": {
+        "description": "Grok Bot の Webhook の **送信キー** を貼ってください。チャットには貼らないでください。"
+      },
+      "GROK_WEBHOOK_KEY_HEADER": {
+        "description": "送信キーを入れるヘッダーの名前です。既定は Authorization（Bearer を付けて送ります）です。"
+      }
+    }
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@cloudflare/workers-types": "5.20261016.1",
+    "@vitest/runner": "4.1.12",
+    "@vitest/snapshot": "4.1.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.1"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "grok-bot-harness-line-inbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "届いたメッセージを入れるデータベースです。自動で作られます。名前はそのままで大丈夫です。"
+      },
+      "CHANNEL_SECRET": {
+        "description": "[LINE Developers コンソール](https://developers.line.biz/console/) のチャネルの **チャネルシークレット** を貼ってください。チャットには貼らないでください。"
+      },
+      "READ_API_KEY": {
+        "description": "Grok Bot のチャットに出た **読み取り用の鍵** を、そのまま貼ってください。自分で作る場合は、32文字以上のランダムな文字列にしてください。"
+      },
+      "RETENTION_DAYS": {
+        "description": "届いたメッセージを残す日数です。既定は30日です。"
+      }
+    }
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@cloudflare/workers-types": "5.20261016.1",
+    "@vitest/runner": "4.1.12",
+    "@vitest/snapshot": "4.1.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.1"
+  }
+}

@@ -1,18 +1,9 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
-import type { Env } from "../src/env";
 import { handleWebhook } from "../src/webhook";
 
-const encoder = new TextEncoder();
-const SECRET = "test-channel-secret";
 const TARGET = "https://api2.cursor.sh/automations/webhook/abc123";
-
-async function sign(body: string, secret = SECRET): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(body)));
-  return btoa(String.fromCharCode(...mac));
-}
 
 function webhookUrl(params: Record<string, string> = { url: TARGET, token: "send-key" }): string {
   return `https://relay.example/webhook?${new URLSearchParams(params)}`;
@@ -20,12 +11,12 @@ function webhookUrl(params: Record<string, string> = { url: TARGET, token: "send
 
 async function post(
   body: string,
-  { env = {}, url = webhookUrl(), signature }: { env?: Env; url?: string; signature?: string } = {},
+  { url = webhookUrl(), signature }: { url?: string; signature?: string } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (signature !== undefined) headers["X-Line-Signature"] = signature;
   const ctx = createExecutionContext();
-  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), env, ctx);
+  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), ctx);
   await waitOnExecutionContext(ctx);
   return response;
 }
@@ -75,14 +66,10 @@ describe("/webhook（forward）", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("CHANNEL_SECRET があれば署名を確かめ、合わなければ401で流さない", async () => {
-    const env = { CHANNEL_SECRET: SECRET };
-    expect((await post(BODY, { env })).status).toBe(401);
-    expect((await post(BODY, { env, signature: "a".repeat(43) })).status).toBe(401);
-    expect((await post(BODY, { env, signature: await sign(BODY, "other") })).status).toBe(401);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect((await post(BODY, { env, signature: await sign(BODY) })).status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+  it("LINE の署名ヘッダーがあれば、そのまま渡す", async () => {
+    await post(BODY, { signature: "sig-value" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({ "X-Line-Signature": "sig-value", Authorization: "Bearer send-key" });
   });
 
   it("イベントが空なら200で、流さない", async () => {
@@ -102,7 +89,7 @@ describe("/webhook（forward）", () => {
   it("上限を超える本文は413", async () => {
     const ctx = createExecutionContext();
     const request = new Request(webhookUrl(), { method: "POST", headers: { "Content-Length": String(2 * 1024 * 1024) }, body: BODY });
-    expect((await handleWebhook(request, {}, ctx)).status).toBe(413);
+    expect((await handleWebhook(request, ctx)).status).toBe(413);
   });
 
   it("POST 以外は405、知らないパスは404", async () => {

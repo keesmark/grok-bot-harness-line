@@ -1,8 +1,3 @@
-export interface Env {
-  // 任意。入れたときだけ LINE の署名を確かめる。
-  CHANNEL_SECRET?: string;
-}
-
 // 流してよい Grok Bot の Webhook の場所（https のホストとパスの頭）。踏み台にされないよう、ここ以外には流さない。
 export interface AllowedTarget {
   host: string;

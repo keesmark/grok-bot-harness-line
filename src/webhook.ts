@@ -1,17 +1,14 @@
-// POST /webhook。?url=…&token=… の宛先に、本文をそのまま流す。何も保存しない。署名は CHANNEL_SECRET があるときだけ確かめる。
+// POST /webhook。?url=…&token=… の宛先に、本文をそのまま流す。何も保存しない。
 import { BodyTooLargeError, readLimitedBody } from "./body";
-import { type AllowedTarget, type Env, type ForwardTarget, targetFromQuery } from "./env";
-import { hasSignatureShape, verifySignature } from "./signature";
+import { type AllowedTarget, type ForwardTarget, targetFromQuery } from "./env";
 
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
 
-async function forward(target: ForwardTarget, body: Uint8Array, events: number): Promise<void> {
+// LINE の署名はそのまま渡す。確かめたくなったら Grok Bot 側で確かめられる。
+async function forward(target: ForwardTarget, body: Uint8Array, signature: string | null, events: number): Promise<void> {
+  const headers = signature === null ? target.headers : { ...target.headers, "X-Line-Signature": signature };
   try {
-    const response = await fetch(target.url, {
-      method: "POST",
-      headers: target.headers,
-      body,
-    });
+    const response = await fetch(target.url, { method: "POST", headers, body });
     if (response.ok) console.log("webhook: 転送", { events, status: response.status });
     else console.error("webhook: 転送先がエラーを返した", { events, status: response.status });
   } catch (error) {
@@ -21,7 +18,6 @@ async function forward(target: ForwardTarget, body: Uint8Array, events: number):
 
 export async function handleWebhook(
   request: Request,
-  env: Env,
   ctx: ExecutionContext,
   allowed?: readonly AllowedTarget[],
 ): Promise<Response> {
@@ -31,12 +27,6 @@ export async function handleWebhook(
   if (!result.ok) {
     console.warn("webhook: 転送先の指定が正しくない", { status: result.status });
     return new Response(null, { status: result.status });
-  }
-
-  const signature = request.headers.get("X-Line-Signature");
-  if (env.CHANNEL_SECRET && !hasSignatureShape(signature)) {
-    console.warn("webhook: 署名の形が違う");
-    return new Response(null, { status: 401 });
   }
 
   let body: Uint8Array;
@@ -50,11 +40,6 @@ export async function handleWebhook(
     throw error;
   }
 
-  if (env.CHANNEL_SECRET && !(await verifySignature(env.CHANNEL_SECRET, body, signature!))) {
-    console.warn("webhook: 署名が合わない");
-    return new Response(null, { status: 401 });
-  }
-
   let events: unknown[];
   try {
     const parsed = JSON.parse(new TextDecoder().decode(body)) as { events?: unknown };
@@ -65,6 +50,6 @@ export async function handleWebhook(
   }
 
   // 「検証」ボタンなど、イベントが空のものは流さない。
-  if (events.length > 0) ctx.waitUntil(forward(result.target, body, events.length));
+  if (events.length > 0) ctx.waitUntil(forward(result.target, body, request.headers.get("X-Line-Signature"), events.length));
   return new Response(null, { status: 200 });
 }

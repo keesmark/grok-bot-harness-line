@@ -20,7 +20,7 @@ const PREVIEW_LABELS: Record<Exclude<MessageType, "text">, string> = {
   other: "［その他］",
 };
 
-const MESSAGE_COLUMNS = "message_id, contact_id, type, text, meta, sent_at, received_at, seen_at";
+const MESSAGE_COLUMNS = "rowid AS seq, message_id, contact_id, type, text, meta, sent_at, received_at, seen_at";
 
 export class ToolError extends Error {}
 
@@ -33,6 +33,7 @@ export const TOOL_DEFINITIONS = [
       type: "object",
       properties: {
         since: { type: "string", description: "この時刻より後に受けたもの（ISO 8601）。既読も含む" },
+        cursor: { type: "string", description: "前の結果の next_cursor。続きを読むときに使う" },
         limit: { type: "integer", minimum: 1, maximum: MESSAGE_LIMIT.max },
       },
       additionalProperties: false,
@@ -61,7 +62,8 @@ export const TOOL_DEFINITIONS = [
       type: "object",
       properties: {
         alias: { type: "string", description: "お客さんの別名（例：c0012）" },
-        before: { type: "string", description: "この時刻より前のもの（ISO 8601）。さかのぼるときに使う" },
+        before: { type: "string", description: "この時刻より前のもの（ISO 8601）" },
+        cursor: { type: "string", description: "前の結果の next_cursor。さらにさかのぼるときに使う" },
         limit: { type: "integer", minimum: 1, maximum: MESSAGE_LIMIT.max },
       },
       required: ["alias"],
@@ -104,6 +106,26 @@ function timeOf(args: Args, name: string): number | undefined {
   return ms;
 }
 
+// 続きを読むための位置。同じ時刻に受けた行があっても取りこぼさないよう、rowid も持つ。
+// unseen は「未読だけ」の続きかどうか。u は未読だけ、a は既読も含む。
+interface Cursor {
+  unseen: boolean;
+  at: number;
+  seq: number;
+}
+
+function cursorOf(row: MessageRow, unseen = false): string {
+  return `${unseen ? "u" : "a"}${row.received_at}.${row.seq}`;
+}
+
+function parseCursor(args: Args): Cursor | undefined {
+  const value = args.cursor;
+  if (value === undefined) return undefined;
+  const match = typeof value === "string" ? /^([ua])(\d+)\.(\d+)$/.exec(value) : null;
+  if (match === null) throw new ToolError("cursor は前の結果の next_cursor をそのまま渡してください。");
+  return { unseen: match[1] === "u", at: Number(match[2]), seq: Number(match[3]) };
+}
+
 function contactOf(args: Args): number {
   const id = typeof args.alias === "string" ? contactIdOf(args.alias) : null;
   if (id === null) throw new ToolError("alias は c0012 のような別名で指定してください。");
@@ -117,15 +139,26 @@ function header(env: Env, now: number) {
 async function listNewMessages(env: Env, args: Args, now: number) {
   const limit = limitOf(args, MESSAGE_LIMIT);
   const since = timeOf(args, "since");
-  const statement =
-    since === undefined
-      ? env.DB.prepare(
-          `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE seen_at IS NULL ORDER BY received_at, rowid LIMIT ?1`,
-        ).bind(limit + 1)
-      : env.DB.prepare(
-          `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE received_at > ?1 ORDER BY received_at, rowid LIMIT ?2`,
-        ).bind(since, limit + 1);
-  const { results } = await statement.all<MessageRow>();
+  const cursor = parseCursor(args);
+  if (since !== undefined && cursor !== undefined) throw new ToolError("since と cursor は同時に指定できません。");
+  // since も cursor もなければ未読だけ。cursor は始めの呼び方（未読だけか、since つきか）を引き継ぐ。
+  const unseenOnly = cursor !== undefined ? cursor.unseen : since === undefined;
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (cursor !== undefined) {
+    conditions.push("(received_at, rowid) > (?, ?)");
+    params.push(cursor.at, cursor.seq);
+  } else if (since !== undefined) {
+    conditions.push("received_at > ?");
+    params.push(since);
+  }
+  if (unseenOnly) conditions.push("seen_at IS NULL");
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const { results } = await env.DB.prepare(
+    `SELECT ${MESSAGE_COLUMNS} FROM messages ${where} ORDER BY received_at, rowid LIMIT ?`,
+  )
+    .bind(...params, limit + 1)
+    .all<MessageRow>();
   const rows = results.slice(0, limit);
   const last = rows.at(-1);
   return {
@@ -133,6 +166,7 @@ async function listNewMessages(env: Env, args: Args, now: number) {
     messages: rows.map(toMessageView),
     has_more: results.length > limit,
     next_since: last ? toJstIso(last.received_at) : null,
+    next_cursor: last ? cursorOf(last, unseenOnly) : null,
   };
 }
 
@@ -182,7 +216,10 @@ async function listConversations(env: Env, args: Args, now: number) {
 async function getConversation(env: Env, args: Args) {
   const contactId = contactOf(args);
   const limit = limitOf(args, MESSAGE_LIMIT);
-  const before = timeOf(args, "before") ?? Number.MAX_SAFE_INTEGER;
+  const before = timeOf(args, "before");
+  const cursor = parseCursor(args);
+  if (before !== undefined && cursor !== undefined) throw new ToolError("before と cursor は同時に指定できません。");
+  const upper = cursor ?? { at: before ?? Number.MAX_SAFE_INTEGER, seq: 0 };
   const contact = await env.DB.prepare("SELECT user_id, first_seen_at FROM contacts WHERE id = ?1")
     .bind(contactId)
     .first<{ user_id: string; first_seen_at: number }>();
@@ -191,18 +228,21 @@ async function getConversation(env: Env, args: Args) {
   }
   const { results } = await env.DB.prepare(
     `SELECT ${MESSAGE_COLUMNS} FROM messages
-      WHERE contact_id = ?1 AND received_at < ?2
-      ORDER BY received_at DESC, rowid DESC LIMIT ?3`,
+      WHERE contact_id = ?1 AND (received_at, rowid) < (?2, ?3)
+      ORDER BY received_at DESC, rowid DESC LIMIT ?4`,
   )
-    .bind(contactId, before, limit + 1)
+    .bind(contactId, upper.at, upper.seq, limit + 1)
     .all<MessageRow>();
+  const rows = results.slice(0, limit);
+  const oldest = rows.at(-1);
   return {
     notice: NOTICE,
     alias: aliasOf(contactId),
     user_id: contact.user_id,
     first_seen_at: toJstIso(contact.first_seen_at),
-    messages: results.slice(0, limit).reverse().map(toMessageView),
+    messages: rows.reverse().map(toMessageView),
     has_more: results.length > limit,
+    next_cursor: results.length > limit && oldest ? cursorOf(oldest) : null,
   };
 }
 

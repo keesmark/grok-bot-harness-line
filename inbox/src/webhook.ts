@@ -6,7 +6,7 @@ import { saveEvents } from "./store";
 
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
 
-export async function handleWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+export async function handleWebhook(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
   if (!env.CHANNEL_SECRET) {
     console.error("webhook: 設定不足（CHANNEL_SECRET）");
@@ -44,15 +44,15 @@ export async function handleWebhook(request: Request, env: Env, ctx: ExecutionCo
     return new Response(null, { status: 400 });
   }
 
+  // 保存してから200を返す。失敗したら500にして、LINE に送り直してもらう（重複は webhookEventId で捨てる）。
   if (events.length > 0) {
-    const receivedAt = Date.now();
-    ctx.waitUntil(
-      saveEvents(env.DB, events, receivedAt).then(
-        (result) => console.log("webhook: 保存", { events: events.length, ...result }),
-        (error: unknown) =>
-          console.error("webhook: 保存に失敗", { events: events.length, error: (error as Error)?.name ?? "unknown" }),
-      ),
-    );
+    try {
+      const result = await saveEvents(env.DB, events, Date.now());
+      console.log("webhook: 保存", { events: events.length, ...result });
+    } catch (error) {
+      console.error("webhook: 保存に失敗", { events: events.length, error: (error as Error)?.name ?? "unknown" });
+      return new Response(null, { status: 500 });
+    }
   }
   return new Response(null, { status: 200 });
 }

@@ -1,4 +1,4 @@
-import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import worker from "../src/index";
 import type { Env } from "../src/env";
 
@@ -15,10 +15,7 @@ export async function sign(body: string | Uint8Array, secret = testEnv.CHANNEL_S
 }
 
 export async function call(request: Request, overrides: Partial<Env> = {}): Promise<Response> {
-  const ctx = createExecutionContext();
-  const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...testEnv, ...overrides } as Env, ctx);
-  await waitOnExecutionContext(ctx);
-  return response;
+  return worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...testEnv, ...overrides } as Env);
 }
 
 export async function postWebhook(body: string, signature?: string, overrides: Partial<Env> = {}): Promise<Response> {
@@ -79,6 +76,7 @@ export async function tool<T = any>(name: string, args: Record<string, unknown> 
 
 export async function resetDb(): Promise<void> {
   await testEnv.DB.batch([testEnv.DB.prepare("DELETE FROM messages"), testEnv.DB.prepare("DELETE FROM contacts"),
+    testEnv.DB.prepare("DELETE FROM unsent"),
     testEnv.DB.prepare("DELETE FROM sqlite_sequence"),
   ]);
 }

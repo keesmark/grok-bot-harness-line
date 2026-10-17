@@ -22,6 +22,12 @@ CREATE TABLE messages (
   CHECK (type = 'text' OR text IS NULL)
 );
 
+-- 送信取消された message.id。あとから元のメッセージが再送されても入れないための印
+CREATE TABLE unsent (
+  message_id TEXT    PRIMARY KEY,
+  unsent_at  INTEGER NOT NULL                      -- 取消を受けた時刻（UNIXミリ秒）
+);
+
 CREATE INDEX messages_by_received ON messages (received_at);
 CREATE INDEX messages_by_contact  ON messages (contact_id, received_at);
 CREATE INDEX messages_unseen      ON messages (received_at) WHERE seen_at IS NULL;

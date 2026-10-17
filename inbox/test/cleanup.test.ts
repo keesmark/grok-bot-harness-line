@@ -31,6 +31,16 @@ describe("定時の削除", () => {
     expect(results[0].n).toBe(1);
   });
 
+  it("一度に消す件数を超えても、期限切れの行をすべて消す", async () => {
+    await postWebhook(payload([textEvent("OLD", "古い")]));
+    await testEnv.DB.prepare(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2500)
+       INSERT INTO messages (webhook_event_id, message_id, contact_id, type, text, sent_at, received_at)
+       SELECT 'BULK' || i, 'BULKM' || i, (SELECT id FROM contacts), 'text', 'x', 0, 0 FROM n`,
+    ).run();
+    expect(await cleanup({ ...testEnv, RETENTION_DAYS: "1" }, 10 * DAY)).toBe(2500);
+  });
+
   it("消した別名の番号は使い回さない", async () => {
     await postWebhook(payload([textEvent("A", "a")]));
     await testEnv.DB.prepare("UPDATE messages SET received_at = 0").run();

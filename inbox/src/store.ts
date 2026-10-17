@@ -80,8 +80,12 @@ export function metaOf(type: MessageType, message: Record<string, unknown>): Rec
   return meta;
 }
 
+// 1回の Webhook のイベントを、まとめて1つの batch で保存する。
 export async function saveEvents(db: D1Database, events: unknown[], receivedAt: number): Promise<SaveResult> {
   const result: SaveResult = { saved: 0, duplicated: 0, unsent: 0, skipped: 0 };
+  const statements: D1PreparedStatement[] = [];
+  const counted: { index: number; kind: "message" | "unsend" }[] = [];
+
   for (const raw of events) {
     const event = raw as LineEvent;
     const userId = event.source?.type === "user" ? event.source.userId : undefined;
@@ -91,8 +95,21 @@ export async function saveEvents(db: D1Database, events: unknown[], receivedAt: 
     }
 
     if (event.type === "unsend" && typeof event.unsend?.messageId === "string") {
-      const deleted = await db.prepare("DELETE FROM messages WHERE message_id = ?1").bind(event.unsend.messageId).run();
-      result.unsent += deleted.meta.changes;
+      const messageId = event.unsend.messageId;
+      // 取り消しの印を残し、あとから元のメッセージが再送されても入れない。
+      statements.push(
+        db.prepare("INSERT OR IGNORE INTO unsent (message_id, unsent_at) VALUES (?1, ?2)").bind(messageId, receivedAt),
+      );
+      counted.push({ index: statements.length, kind: "unsend" });
+      statements.push(db.prepare("DELETE FROM messages WHERE message_id = ?1").bind(messageId));
+      statements.push(
+        db
+          .prepare(
+            `DELETE FROM contacts WHERE user_id = ?1
+               AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.contact_id = contacts.id)`,
+          )
+          .bind(userId),
+      );
       continue;
     }
 
@@ -110,20 +127,26 @@ export async function saveEvents(db: D1Database, events: unknown[], receivedAt: 
 
     const type = normalizeType(message.type);
     const text = type === "text" && typeof message.text === "string" ? message.text : null;
-    // ON CONFLICT の upsert は AUTOINCREMENT の番号を空費するので、無いときだけ入れる。
-    const [, , inserted] = await db.batch([
+    // 取り消し済みのメッセージなら、別名も作らない。ON CONFLICT の upsert は AUTOINCREMENT の番号を空費するので、無いときだけ入れる。
+    statements.push(
       db
         .prepare(
           `INSERT INTO contacts (user_id, first_seen_at, last_seen_at)
-           SELECT ?1, ?2, ?2 WHERE NOT EXISTS (SELECT 1 FROM contacts WHERE user_id = ?1)`,
+           SELECT ?1, ?2, ?2
+            WHERE NOT EXISTS (SELECT 1 FROM contacts WHERE user_id = ?1)
+              AND NOT EXISTS (SELECT 1 FROM unsent WHERE message_id = ?3)`,
         )
-        .bind(userId, receivedAt),
+        .bind(userId, receivedAt, message.id),
       db.prepare("UPDATE contacts SET last_seen_at = ?2 WHERE user_id = ?1").bind(userId, receivedAt),
+    );
+    counted.push({ index: statements.length, kind: "message" });
+    statements.push(
       db
         .prepare(
           `INSERT OR IGNORE INTO messages
              (webhook_event_id, message_id, contact_id, type, text, meta, sent_at, received_at, is_redelivery)
-           SELECT ?3, ?4, id, ?5, ?6, ?7, ?8, ?2, ?9 FROM contacts WHERE user_id = ?1`,
+           SELECT ?3, ?4, id, ?5, ?6, ?7, ?8, ?2, ?9 FROM contacts
+            WHERE user_id = ?1 AND NOT EXISTS (SELECT 1 FROM unsent WHERE message_id = ?4)`,
         )
         .bind(
           userId,
@@ -136,14 +159,22 @@ export async function saveEvents(db: D1Database, events: unknown[], receivedAt: 
           event.timestamp,
           event.deliveryContext?.isRedelivery ? 1 : 0,
         ),
-    ]);
-    if (inserted.meta.changes > 0) result.saved++;
+    );
+  }
+
+  if (statements.length === 0) return result;
+  const results = await db.batch(statements);
+  for (const { index, kind } of counted) {
+    const changes = results[index]?.meta.changes ?? 0;
+    if (kind === "unsend") result.unsent += changes;
+    else if (changes > 0) result.saved++;
     else result.duplicated++;
   }
   return result;
 }
 
 export interface MessageRow {
+  seq: number;
   message_id: string;
   contact_id: number;
   type: MessageType;

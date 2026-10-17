@@ -22,6 +22,10 @@ describe("/mcp の入口", () => {
     expect((await call(request(), { READ_API_KEY: short })).status).toBe(503);
   });
 
+  it("Bearer の大文字小文字は問わない", async () => {
+    expect((await call(mcpRequest({ Authorization: `bearer ${READ_KEY}` }))).status).toBe(200);
+  });
+
   it("GET は405", async () => {
     expect((await call(mcpRequest({ Authorization: `Bearer ${READ_KEY}` }, "GET"))).status).toBe(405);
   });
@@ -86,6 +90,45 @@ describe("道具", () => {
     const { data } = await tool("list_new_messages", { limit: 2 });
     expect(data.messages).toHaveLength(2);
     expect(data.has_more).toBe(true);
+  });
+
+  it("同じ Webhook で届いた行も、cursor で取りこぼさずに続きを読める", async () => {
+    const events = [1, 2, 3, 4, 5].map((n) => textEvent("UA", `${n}通目`));
+    await postWebhook(payload(events));
+    for (const first of [{}, { since: "2000-01-01T00:00:00" }]) {
+      const page1 = await tool("list_new_messages", { ...first, limit: 3 });
+      expect(page1.data.has_more).toBe(true);
+      const page2 = await tool("list_new_messages", { cursor: page1.data.next_cursor, limit: 3 });
+      expect([...page1.data.messages, ...page2.data.messages].map((m: any) => m.text)).toEqual(
+        events.map((e) => e.message.text),
+      );
+      expect(page2.data.has_more).toBe(false);
+    }
+  });
+
+  it("未読の続きの cursor は、既読になった行を飛ばす", async () => {
+    const events = [1, 2, 3].map((n) => textEvent("UA", `${n}通目`));
+    await postWebhook(payload(events));
+    const page1 = await tool("list_new_messages", { limit: 1 });
+    await tool("mark_seen", { ids: [events[1].message.id] });
+    const page2 = await tool("list_new_messages", { cursor: page1.data.next_cursor });
+    expect(page2.data.messages.map((m: any) => m.text)).toEqual(["3通目"]);
+  });
+
+  it("since と cursor の両方、壊れた cursor は断る", async () => {
+    expect((await tool("list_new_messages", { since: "2000-01-01", cursor: "a1.1" })).isError).toBe(true);
+    expect((await tool("list_new_messages", { cursor: "nope" })).isError).toBe(true);
+  });
+
+  it("get_conversation は cursor で、同じ時刻の行も取りこぼさずにさかのぼれる", async () => {
+    const events = [1, 2, 3].map((n) => textEvent("UA", `${n}通目`));
+    await postWebhook(payload(events));
+    const page1 = await tool("get_conversation", { alias: "c0001", limit: 2 });
+    expect(page1.data.messages.map((m: any) => m.text)).toEqual(["2通目", "3通目"]);
+    const page2 = await tool("get_conversation", { alias: "c0001", cursor: page1.data.next_cursor, limit: 2 });
+    expect(page2.data.messages.map((m: any) => m.text)).toEqual(["1通目"]);
+    expect(page2.data.has_more).toBe(false);
+    expect(page2.data.next_cursor).toBeNull();
   });
 
   it("since を渡すと既読も含めて返す", async () => {

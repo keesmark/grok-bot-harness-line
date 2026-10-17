@@ -118,6 +118,28 @@ describe("/webhook", () => {
     expect(await rows()).toHaveLength(0);
   });
 
+  it("取り消したあとに元のメッセージが再送されても入れず、別名も残さない", async () => {
+    const event = textEvent("U1", "取り消す文");
+    const unsend = { type: "unsend", timestamp: 2, webhookEventId: "U-2", source: { type: "user", userId: "U1" }, unsend: { messageId: event.message.id } };
+    await postWebhook(payload([event]));
+    await postWebhook(payload([unsend]));
+    await postWebhook(payload([{ ...event, deliveryContext: { isRedelivery: true } }]));
+    expect(await rows()).toHaveLength(0);
+    const { results } = await testEnv.DB.prepare("SELECT COUNT(*) AS n FROM contacts").all<any>();
+    expect(results[0].n).toBe(0);
+  });
+
+  it("1回の Webhook の複数イベントをまとめて保存する", async () => {
+    const events = [textEvent("U1", "a"), textEvent("U2", "b"), textEvent("U1", "c")];
+    expect((await postWebhook(payload(events))).status).toBe(200);
+    expect((await rows()).map((r: any) => r.text)).toEqual(["a", "b", "c"]);
+  });
+
+  it("保存に失敗したら500を返し、LINE に送り直してもらう", async () => {
+    const broken = { batch: async () => Promise.reject(new Error("D1 down")) } as unknown as D1Database;
+    expect((await postWebhook(payload([textEvent("U1", "x")]), undefined, { DB: broken })).status).toBe(500);
+  });
+
   it("種類ごとに決めたメタデータだけを残し、text 以外に本文を入れない", async () => {
     await postWebhook(
       payload([

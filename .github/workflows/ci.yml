@@ -9,6 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  # Deploy ボタンは各フォルダの中で完結している必要があるので、共通の部品は写しで持つ。中身が食い違わないか確かめる。
+  shared-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          for file in src/body.ts src/signature.ts; do
+            diff -u "forward/$file" "inbox/$file"
+          done
+
   test:
     runs-on: ubuntu-latest
     strategy:

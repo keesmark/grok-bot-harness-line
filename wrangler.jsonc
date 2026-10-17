@@ -4,6 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
   "workers_dev": true,
-  // LINE に登録する URL にトークンが入るので、リクエストのログは残さない
+  // The webhook URL carries the token, so keep request logs off.
   "observability": { "enabled": false }
 }

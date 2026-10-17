@@ -1,4 +1,3 @@
-// 流してよい Grok Bot の Webhook の場所（https のホストとパスの頭）。踏み台にされないよう、ここ以外には流さない。
 export interface AllowedTarget {
   host: string;
   pathPrefix: string;
@@ -15,7 +14,6 @@ export interface ForwardTarget {
 
 export type TargetResult = { ok: true; target: ForwardTarget } | { ok: false; status: 400 | 403 };
 
-// LINE に登録した URL の ?url=…&token=… から転送先を作る。
 export function targetFromQuery(
   requestUrl: URL,
   allowed: readonly AllowedTarget[] = GROK_BOT_TARGETS,

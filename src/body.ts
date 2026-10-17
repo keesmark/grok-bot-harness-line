@@ -1,5 +1,3 @@
-// 本文をバイト列のまま、上限つきで読む。
-// Content-Length がない場合や偽っている場合に備えて、読みながら数える。
 export class BodyTooLargeError extends Error {}
 
 export async function readLimitedBody(request: Request, limit: number): Promise<Uint8Array> {

@@ -26,7 +26,7 @@ const BODY = JSON.stringify({
   events: [{ type: "message", source: { type: "user", userId: "U1" }, message: { id: "1", type: "text", text: "こんにちは🙂" } }],
 });
 
-describe("/webhook（forward）", () => {
+describe("/webhook", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe("/webhook（forward）", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("クエリの url に、token を Bearer で付けて本文をそのまま流す", async () => {
+  it("forwards the body unchanged to url with token as a Bearer header", async () => {
     expect((await post(BODY)).status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -44,14 +44,14 @@ describe("/webhook（forward）", () => {
     expect(new TextDecoder().decode(init.body as Uint8Array)).toBe(BODY);
   });
 
-  it("url か token がない、url が読めないときは400で、流さない", async () => {
+  it("returns 400 and does not forward when url or token is missing or url is invalid", async () => {
     expect((await post(BODY, { url: webhookUrl({ url: TARGET }) })).status).toBe(400);
     expect((await post(BODY, { url: webhookUrl({ token: "k" }) })).status).toBe(400);
     expect((await post(BODY, { url: webhookUrl({ url: "not a url", token: "k" }) })).status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("Grok Bot の Webhook 以外の宛先は403で、流さない", async () => {
+  it("returns 403 and does not forward to anything other than a Grok Bot webhook", async () => {
     for (const target of [
       "https://evil.example/automations/webhook/abc",
       "https://api2.cursor.sh.evil.example/automations/webhook/abc",
@@ -66,33 +66,33 @@ describe("/webhook（forward）", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("LINE の署名ヘッダーがあれば、そのまま渡す", async () => {
+  it("passes the LINE signature header through", async () => {
     await post(BODY, { signature: "sig-value" });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.headers).toMatchObject({ "X-Line-Signature": "sig-value", Authorization: "Bearer send-key" });
   });
 
-  it("イベントが空なら200で、流さない", async () => {
+  it("returns 200 without forwarding when there are no events", async () => {
     expect((await post(JSON.stringify({ destination: "U", events: [] }))).status).toBe(200);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("JSON が壊れていると400", async () => {
+  it("returns 400 for invalid JSON", async () => {
     expect((await post("{oops")).status).toBe(400);
   });
 
-  it("転送先がエラーでも LINE には200を返す", async () => {
+  it("returns 200 to LINE even when the upstream fails", async () => {
     fetchMock.mockImplementation(async () => new Response(null, { status: 401 }));
     expect((await post(BODY)).status).toBe(200);
   });
 
-  it("上限を超える本文は413", async () => {
+  it("returns 413 for a body over the limit", async () => {
     const ctx = createExecutionContext();
     const request = new Request(webhookUrl(), { method: "POST", headers: { "Content-Length": String(2 * 1024 * 1024) }, body: BODY });
     expect((await handleWebhook(request, ctx)).status).toBe(413);
   });
 
-  it("POST 以外は405、知らないパスは404", async () => {
+  it("returns 405 for non-POST and 404 for unknown paths", async () => {
     const call = (url: string) =>
       worker.fetch(new Request(url) as Request<unknown, IncomingRequestCfProperties>, {}, createExecutionContext());
     expect((await call(webhookUrl())).status).toBe(405);

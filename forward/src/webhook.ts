@@ -9,7 +9,7 @@ async function forward(target: ForwardTarget, body: Uint8Array, events: number):
   try {
     const response = await fetch(target.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", [target.headerName]: target.headerValue },
+      headers: target.headers,
       body,
     });
     if (response.ok) console.log("webhook: 転送", { events, status: response.status });
@@ -23,7 +23,7 @@ export async function handleWebhook(request: Request, env: Env, ctx: ExecutionCo
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
   const target = forwardTarget(env);
   if (!env.CHANNEL_SECRET || target === null) {
-    console.error("webhook: 設定不足（CHANNEL_SECRET / GROK_WEBHOOK_URL / GROK_WEBHOOK_KEY）");
+    console.error("webhook: 設定不足（CHANNEL_SECRET / GROK_WEBHOOK_URL）");
     return new Response(null, { status: 503 });
   }
 

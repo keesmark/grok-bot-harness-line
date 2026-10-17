@@ -59,6 +59,14 @@ describe("/webhook（forward）", () => {
     expect(init.headers).not.toHaveProperty("Authorization");
   });
 
+  it("送信キーがなければ、ヘッダーを付けずに URL のまま流す", async () => {
+    const url = "https://grok-bot.example/webhook?token=abc";
+    expect((await post(BODY, undefined, { GROK_WEBHOOK_URL: url, GROK_WEBHOOK_KEY: "" })).status).toBe(200);
+    const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(url);
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+  });
+
   it("署名が合わなければ401で、流さない", async () => {
     expect((await post(BODY, "a".repeat(43))).status).toBe(401);
     expect((await post(BODY, await sign(BODY, "other"))).status).toBe(401);
@@ -76,7 +84,6 @@ describe("/webhook（forward）", () => {
 
   it("設定が足りないか、転送先が https でなければ503", async () => {
     expect((await post(BODY, undefined, { CHANNEL_SECRET: "" })).status).toBe(503);
-    expect((await post(BODY, undefined, { GROK_WEBHOOK_KEY: "" })).status).toBe(503);
     expect((await post(BODY, undefined, { GROK_WEBHOOK_URL: "http://grok-bot.example/webhook" })).status).toBe(503);
     expect((await post(BODY, undefined, { GROK_WEBHOOK_URL: "not a url" })).status).toBe(503);
     expect(fetchMock).not.toHaveBeenCalled();

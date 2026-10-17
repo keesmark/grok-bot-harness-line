@@ -17,7 +17,7 @@
         "description": "Grok Bot の **Webhook の URL** を貼ってください。https で始まるものだけ使えます。"
       },
       "GROK_WEBHOOK_KEY": {
-        "description": "Grok Bot の Webhook の **送信キー** を貼ってください。チャットには貼らないでください。"
+        "description": "Grok Bot の Webhook の **送信キー** を貼ってください。URL にトークンが付いている場合は空のままで大丈夫です。チャットには貼らないでください。"
       },
       "GROK_WEBHOOK_KEY_HEADER": {
         "description": "送信キーを入れるヘッダーの名前です。既定は Authorization（Bearer を付けて送ります）です。"

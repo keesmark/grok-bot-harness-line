@@ -7,7 +7,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export async function cleanup(env: Env, now = Date.now()): Promise<number | null> {
   const days = retentionDays(env);
   if (days === null) {
-    console.warn("cleanup: 保持日数の設定がない");
+    console.log("cleanup: 保持日数の設定がないので消さない");
     return null;
   }
   const [deleted] = await env.DB.batch([

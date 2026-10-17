@@ -16,12 +16,12 @@ describe("定時の削除", () => {
       .bind(31 * DAY)
       .run();
 
-    expect(await cleanup(testEnv)).toBe(1);
+    expect(await cleanup({ ...testEnv, RETENTION_DAYS: "30" })).toBe(1);
     const { results } = await testEnv.DB.prepare("SELECT user_id FROM contacts").all<any>();
     expect(results.map((r: any) => r.user_id)).toEqual(["NEW"]);
   });
 
-  it("RETENTION_DAYS が不正なら何も消さず、retention_days が null", async () => {
+  it("RETENTION_DAYS が空か不正なら何も消さず、retention_days が null", async () => {
     await postWebhook(payload([textEvent("OLD", "古い")]));
     await testEnv.DB.prepare("UPDATE messages SET received_at = 0").run();
     for (const value of ["", "0", "-1", "1.5", "abc"]) {
@@ -34,7 +34,7 @@ describe("定時の削除", () => {
   it("消した別名の番号は使い回さない", async () => {
     await postWebhook(payload([textEvent("A", "a")]));
     await testEnv.DB.prepare("UPDATE messages SET received_at = 0").run();
-    await cleanup(testEnv);
+    await cleanup({ ...testEnv, RETENTION_DAYS: "30" });
     await postWebhook(payload([textEvent("B", "b")]));
     const { data } = await tool("list_new_messages");
     expect(data.messages[0].alias).toBe("c0002");

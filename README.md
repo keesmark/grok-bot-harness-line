@@ -26,7 +26,7 @@ LINE 公式アカウントに届いたメッセージを、Grok Bot に届ける
 |---|---|
 | `CHANNEL_SECRET` | LINE のチャネルシークレット |
 | `GROK_WEBHOOK_URL` | Grok Bot の Webhook の URL（https のみ） |
-| `GROK_WEBHOOK_KEY` | Grok Bot の Webhook の送信キー |
+| `GROK_WEBHOOK_KEY` | Grok Bot の Webhook の送信キー。URL にトークンが付いている場合は空でよい |
 | `GROK_WEBHOOK_KEY_HEADER` | 送信キーを入れるヘッダー名。既定は `Authorization`（`Bearer <キー>` で送ります）。ほかの名前にすると、キーをそのまま入れます |
 
 デプロイできたら、LINE Developers コンソールの Webhook URL に `https://<Worker の URL>/webhook` を貼り、「検証」を押して成功を確かめます。
@@ -43,7 +43,7 @@ LINE 公式アカウントに届いたメッセージを、Grok Bot に届ける
 |---|---|
 | `CHANNEL_SECRET` | LINE のチャネルシークレット |
 | `READ_API_KEY` | 読み取り用の鍵。32 文字以上のランダムな文字列 |
-| `RETENTION_DAYS` | 残す日数。既定は 30 |
+| `RETENTION_DAYS` | 残す日数。空のままなら消しません（既定） |
 
 読み取り用の鍵は、次のように作れます。
 
@@ -78,7 +78,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 - 保存するのは、1対1のトークの `message` イベントだけです。グループや複数人トークは保存しません。
 - お客さんが書いた文字で保存するのは、テキストの本文だけです。画像・動画・音声・ファイル・スタンプ・位置は、種類と数字のメタデータだけを残します（ファイル名・住所・URL は残しません）。
 - お客さんが送信を取り消したら、その行を消します。
-- `RETENTION_DAYS` 日より古い行は、毎日 日本時間の午前3時に消えます。
+- 既定では、保存したメッセージは消えません。`RETENTION_DAYS` に日数を入れると、それより古い行が毎日 日本時間の午前3時に消えます。
 
 ## セキュリティ
 

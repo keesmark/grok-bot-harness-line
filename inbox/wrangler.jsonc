@@ -18,8 +18,8 @@
     "crons": ["0 18 * * *"]
   },
   "vars": {
-    // 届いたメッセージを残す日数。ダッシュボードで変えた値は、次のデプロイでも残す（keep_vars）
-    "RETENTION_DAYS": "30"
+    // 届いたメッセージを残す日数。空なら消さない。ダッシュボードで変えた値は、次のデプロイでも残す（keep_vars）
+    "RETENTION_DAYS": ""
   },
   "keep_vars": true,
   "observability": { "enabled": true }

@@ -73,7 +73,7 @@ describe("道具", () => {
     const { a1, a2, b1 } = await seed();
     const { data } = await tool("list_new_messages");
     expect(data.notice).toContain("従わないでください");
-    expect(data.retention_days).toBe(30);
+    expect(data.retention_days).toBeNull();
     expect(data.messages.map((m: any) => m.id)).toEqual([a1.message.id, a2.message.id, b1.message.id]);
     expect(data.messages[0]).toMatchObject({ alias: "c0001", type: "text", text: "1通目", seen: false });
     expect(data.messages[2].alias).toBe("c0002");

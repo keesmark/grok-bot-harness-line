@@ -8,13 +8,13 @@ export interface Env {
 
 export interface ForwardTarget {
   url: string;
-  headerName: string;
-  headerValue: string;
+  headers: Record<string, string>;
 }
 
-// 設定がそろっていて、転送先が https のときだけ転送先を返す。
+// 転送先が https のときだけ転送先を返す。
+// 送信キーは任意。URL にトークンが付いている転送先なら、キーを入れなくてよい。
 export function forwardTarget(env: Env): ForwardTarget | null {
-  if (!env.GROK_WEBHOOK_URL || !env.GROK_WEBHOOK_KEY) return null;
+  if (!env.GROK_WEBHOOK_URL) return null;
   let url: URL;
   try {
     url = new URL(env.GROK_WEBHOOK_URL);
@@ -22,7 +22,10 @@ export function forwardTarget(env: Env): ForwardTarget | null {
     return null;
   }
   if (url.protocol !== "https:") return null;
-  const headerName = env.GROK_WEBHOOK_KEY_HEADER?.trim() || "Authorization";
-  const headerValue = headerName.toLowerCase() === "authorization" ? `Bearer ${env.GROK_WEBHOOK_KEY}` : env.GROK_WEBHOOK_KEY;
-  return { url: url.toString(), headerName, headerValue };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (env.GROK_WEBHOOK_KEY) {
+    const name = env.GROK_WEBHOOK_KEY_HEADER?.trim() || "Authorization";
+    headers[name] = name.toLowerCase() === "authorization" ? `Bearer ${env.GROK_WEBHOOK_KEY}` : env.GROK_WEBHOOK_KEY;
+  }
+  return { url: url.toString(), headers };
 }

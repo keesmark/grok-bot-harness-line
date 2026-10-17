@@ -5,7 +5,7 @@ export interface Env {
   RETENTION_DAYS?: string;
 }
 
-// RETENTION_DAYS が正の整数でなければ null。そのときは何も消さない。
+// RETENTION_DAYS が正の整数でなければ null。そのときは何も消さない（無期限）。
 export function retentionDays(env: Env): number | null {
   const value = env.RETENTION_DAYS?.trim() ?? "";
   if (!/^\d+$/.test(value)) return null;

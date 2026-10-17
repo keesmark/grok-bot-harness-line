@@ -1,3 +1,7 @@
+export interface Env {
+  RELAY_KEY?: string;
+}
+
 export const GROK_BOT_DOMAINS: readonly string[] = ["cursor.sh"];
 
 export interface ForwardTarget {

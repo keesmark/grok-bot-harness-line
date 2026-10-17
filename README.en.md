@@ -15,7 +15,7 @@ It runs on your own Cloudflare account (the free plan is enough). Nothing passes
 ## What you need
 
 - A LINE Official Account with the Messaging API enabled ([LINE Developers Console](https://developers.line.biz/console/))
-- Your Grok Bot webhook URL and key
+- Your Grok Bot webhook URL and token
 - A Cloudflare account (the free plan is enough)
 - A GitHub account (the button copies this repository into your GitHub)
 
@@ -24,10 +24,10 @@ It runs on your own Cloudflare account (the free plan is enough). Nothing passes
 After deploying, paste the following into the Webhook URL field in the LINE Developers Console, then press "Verify" and check that it succeeds.
 
 ```
-https://<your Worker URL>/webhook?url=<Grok Bot webhook URL>&token=<key>
+https://<your Worker URL>/webhook?url=<Grok Bot webhook URL>&token=<Grok Bot token>
 ```
 
-URL-encode `url`. The Worker sends `token` as `Authorization: Bearer <key>` and posts the body to `url` exactly as LINE sent it.
+URL-encode `url`. The Worker sends `token` as `Authorization: Bearer <Grok Bot token>` and posts the body to `url` exactly as LINE sent it.
 
 - A Grok Bot webhook URL looks like `https://api2.cursor.sh/automations/webhook/…`.
 - Only https URLs on `cursor.sh` and its subdomains are allowed as destinations (`GROK_BOT_DOMAINS` in `src/env.ts`). The path is not checked, so the Worker keeps working if the shape of Grok Bot URLs changes. Any other destination gets a 403 and nothing is forwarded.
@@ -38,6 +38,20 @@ URL-encode `url`. The Worker sends `token` as `Authorization: Bearer <key>` and 
 ### About the LINE signature
 
 This Worker does not verify the LINE signature. Sending a fake message to Grok Bot through the Worker requires the key (`token`), and anyone with the key can call Grok Bot directly without the Worker, so verifying here adds no protection. The `X-Line-Signature` header is passed through to Grok Bot unchanged, so Grok Bot can verify it if needed.
+
+### Keeping the Worker from being used as a relay (optional)
+
+Without any setup, anyone who learns your Worker URL can attach their own `token` and body and make your Worker POST to `cursor.sh`. To prevent this, pick a passphrase, store it as the Worker secret `RELAY_KEY`, and add `&key=<passphrase>` to the URL you register in LINE.
+
+```sh
+npx wrangler secret put RELAY_KEY
+```
+
+You can also add it in the Cloudflare dashboard under the Worker's Settings → Variables and Secrets. Use a long random string that is hard to guess (for example `openssl rand -hex 32`). When `RELAY_KEY` is set, requests with a missing or wrong `key` get a 401 and nothing is forwarded.
+
+```
+https://<your Worker URL>/webhook?url=<Grok Bot webhook URL>&token=<Grok Bot token>&key=<passphrase>
+```
 
 ## Design
 
@@ -69,7 +83,9 @@ flowchart TD
     B -- other --> N404[404]
     B -- /webhook --> C{POST?}
     C -- no --> N405[405]
-    C -- yes --> D{url and token present<br/>and url parses?}
+    C -- yes --> K{If RELAY_KEY is set,<br/>does key match?}
+    K -- no --> N401[401]
+    K -- yes --> D{url and token present<br/>and url parses?}
     D -- no --> N400a[400]
     D -- yes --> E{Destination on cursor.sh?<br/>https, no port, no user info<br/>cursor.sh or a subdomain}
     E -- no --> N403[403]
@@ -89,6 +105,7 @@ flowchart TD
 | `src/index.ts` | Routes requests by path |
 | `src/webhook.ts` | Handles `/webhook` and forwards to Grok Bot |
 | `src/env.ts` | Allowed destinations, and building the destination from `url` and `token` |
+| `src/key.ts` | Checks `key` against `RELAY_KEY` |
 | `src/body.ts` | Reads the body with a size cap |
 
 ## Security

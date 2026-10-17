@@ -1,5 +1,6 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Env } from "../src/env";
 import worker from "../src/index";
 import { handleWebhook } from "../src/webhook";
 
@@ -11,12 +12,12 @@ function webhookUrl(params: Record<string, string> = { url: TARGET, token: "send
 
 async function post(
   body: string,
-  { url = webhookUrl(), signature }: { url?: string; signature?: string } = {},
+  { url = webhookUrl(), signature, env = {} }: { url?: string; signature?: string; env?: Env } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (signature !== undefined) headers["X-Line-Signature"] = signature;
   const ctx = createExecutionContext();
-  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), ctx);
+  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), env, ctx);
   await waitOnExecutionContext(ctx);
   return response;
 }
@@ -75,6 +76,17 @@ describe("/webhook", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("forwards only requests with the right key when RELAY_KEY is set", async () => {
+    const env = { RELAY_KEY: "relay-secret" };
+    expect((await post(BODY, { env })).status).toBe(401);
+    expect((await post(BODY, { env, url: webhookUrl({ url: TARGET, token: "send-key", key: "wrong" }) })).status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await post(BODY, { env, url: webhookUrl({ url: TARGET, token: "send-key", key: "relay-secret" }) })).status).toBe(200);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(TARGET);
+    expect(init.headers).toEqual({ "Content-Type": "application/json", Authorization: "Bearer send-key" });
+  });
+
   it("passes the LINE signature header through", async () => {
     await post(BODY, { signature: "sig-value" });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -90,7 +102,7 @@ describe("/webhook", () => {
   it("returns 400 for invalid JSON or an empty body", async () => {
     expect((await post("{oops")).status).toBe(400);
     const request = new Request(webhookUrl(), { method: "POST" });
-    expect((await handleWebhook(request, createExecutionContext())).status).toBe(400);
+    expect((await handleWebhook(request, {}, createExecutionContext())).status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -111,7 +123,7 @@ describe("/webhook", () => {
   it("returns 413 for a body over the limit", async () => {
     const ctx = createExecutionContext();
     const request = new Request(webhookUrl(), { method: "POST", headers: { "Content-Length": String(2 * 1024 * 1024) }, body: BODY });
-    expect((await handleWebhook(request, ctx)).status).toBe(413);
+    expect((await handleWebhook(request, {}, ctx)).status).toBe(413);
   });
 
   it("returns 413 for a streamed body over the limit without Content-Length", async () => {
@@ -125,7 +137,7 @@ describe("/webhook", () => {
     });
     const request = new Request(webhookUrl(), { method: "POST", body: stream });
     expect(request.headers.get("Content-Length")).toBeNull();
-    expect((await handleWebhook(request, createExecutionContext())).status).toBe(413);
+    expect((await handleWebhook(request, {}, createExecutionContext())).status).toBe(413);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -136,7 +148,7 @@ describe("/webhook", () => {
       },
     });
     const request = new Request(webhookUrl(), { method: "POST", body: stream });
-    await expect(handleWebhook(request, createExecutionContext())).rejects.toThrow("connection lost");
+    await expect(handleWebhook(request, {}, createExecutionContext())).rejects.toThrow("connection lost");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

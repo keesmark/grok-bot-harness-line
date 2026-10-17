@@ -39,6 +39,20 @@ https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送�
 
 この Worker は LINE の署名を確かめません。偽のメッセージを Grok Bot に届けるには送信キー（`token`）が要りますが、送信キーを知っている人は Worker を通さずに Grok Bot へ直接送れるので、Worker で確かめても守りが増えないためです。LINE の `X-Line-Signature` ヘッダーはそのまま Grok Bot に渡すので、必要なら Grok Bot 側で確かめられます。
 
+### 踏み台にされないようにする（任意）
+
+何も設定しないと、Worker の URL を知った人が、自分の `token` と本文を付けて、あなたの Worker から `cursor.sh` に POST させられます。これを防ぎたいときは、合言葉を1つ決めて Worker のシークレット `RELAY_KEY` に入れ、LINE に登録する URL に `&key=<合言葉>` を足します。
+
+```sh
+npx wrangler secret put RELAY_KEY
+```
+
+Cloudflare のダッシュボードで、Worker の「設定」→「変数とシークレット」から足しても構いません。合言葉は推測されにくい長いランダムな文字列にしてください（例: `openssl rand -hex 32`）。`RELAY_KEY` があると、`key` が合わないリクエストは 401 になり、どこにも流しません。
+
+```
+https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送信キー>&key=<合言葉>
+```
+
 ## 設計
 
 ### 全体の流れ
@@ -69,7 +83,9 @@ flowchart TD
     B -- その他 --> N404[404]
     B -- /webhook --> C{POST か}
     C -- いいえ --> N405[405]
-    C -- はい --> D{url と token があり<br/>url が読めるか}
+    C -- はい --> K{RELAY_KEY があれば<br/>key が合うか}
+    K -- いいえ --> N401[401]
+    K -- はい --> D{url と token があり<br/>url が読めるか}
     D -- いいえ --> N400a[400]
     D -- はい --> E{宛先が cursor.sh か<br/>https・ポートなし・ユーザー情報なし<br/>cursor.sh かそのサブドメイン}
     E -- いいえ --> N403[403]
@@ -89,6 +105,7 @@ flowchart TD
 | `src/index.ts` | パスごとの振り分け |
 | `src/webhook.ts` | `/webhook` の処理と Grok Bot への転送 |
 | `src/env.ts` | 転送してよい宛先の一覧と、`url`・`token` からの宛先づくり |
+| `src/key.ts` | `RELAY_KEY` と `key` の照合 |
 | `src/body.ts` | 本文を上限つきで読む |
 
 ## セキュリティ

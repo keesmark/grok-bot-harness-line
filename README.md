@@ -50,6 +50,7 @@ https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送�
 ```sh
 npm ci
 npm test
+npm run coverage
 npm run dev
 ```
 

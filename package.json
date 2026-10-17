@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "wrangler dev",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "typecheck": "tsc",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.23.0",
     "@cloudflare/workers-types": "5.20261016.1",
+    "@vitest/coverage-istanbul": "4.1.12",
     "@vitest/runner": "4.1.12",
     "@vitest/snapshot": "4.1.12",
     "typescript": "5.9.3",

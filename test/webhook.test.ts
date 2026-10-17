@@ -86,15 +86,38 @@ describe("/webhook", () => {
     expect((await post(BODY)).status).toBe(200);
   });
 
+  it("returns 200 to LINE even when the upstream is unreachable", async () => {
+    fetchMock.mockImplementation(async () => {
+      throw new TypeError("network error");
+    });
+    expect((await post(BODY)).status).toBe(200);
+  });
+
   it("returns 413 for a body over the limit", async () => {
     const ctx = createExecutionContext();
     const request = new Request(webhookUrl(), { method: "POST", headers: { "Content-Length": String(2 * 1024 * 1024) }, body: BODY });
     expect((await handleWebhook(request, ctx)).status).toBe(413);
   });
 
-  it("returns 405 for non-POST and 404 for unknown paths", async () => {
+  it("returns 413 for a streamed body over the limit without Content-Length", async () => {
+    const chunk = new Uint8Array(256 * 1024);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 5) controller.enqueue(chunk);
+        else controller.close();
+      },
+    });
+    const request = new Request(webhookUrl(), { method: "POST", body: stream });
+    expect(request.headers.get("Content-Length")).toBeNull();
+    expect((await handleWebhook(request, createExecutionContext())).status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 on /, 405 for non-POST and 404 for unknown paths", async () => {
     const call = (url: string) =>
       worker.fetch(new Request(url) as Request<unknown, IncomingRequestCfProperties>, {}, createExecutionContext());
+    expect((await call("https://relay.example/")).status).toBe(200);
     expect((await call(webhookUrl())).status).toBe(405);
     expect((await call("https://relay.example/x")).status).toBe(404);
   });

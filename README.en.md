@@ -50,6 +50,7 @@ This Worker does not verify the LINE signature. Sending a fake message to Grok B
 ```sh
 npm ci
 npm test
+npm run coverage
 npm run dev
 ```
 

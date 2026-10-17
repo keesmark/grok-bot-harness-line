@@ -3,8 +3,15 @@ export interface Env {
   CHANNEL_SECRET?: string;
 }
 
-// 流してよい Grok Bot の Webhook のドメイン。踏み台にされないよう、ここ以外には流さない。
-export const GROK_BOT_HOSTS: readonly string[] = [];
+// 流してよい Grok Bot の Webhook の場所（https のホストとパスの頭）。踏み台にされないよう、ここ以外には流さない。
+export interface AllowedTarget {
+  host: string;
+  pathPrefix: string;
+}
+
+export const GROK_BOT_TARGETS: readonly AllowedTarget[] = [
+  { host: "api2.cursor.sh", pathPrefix: "/automations/webhook/" },
+];
 
 export interface ForwardTarget {
   url: string;
@@ -14,7 +21,10 @@ export interface ForwardTarget {
 export type TargetResult = { ok: true; target: ForwardTarget } | { ok: false; status: 400 | 403 };
 
 // LINE に登録した URL の ?url=…&token=… から転送先を作る。
-export function targetFromQuery(requestUrl: URL, hosts: readonly string[] = GROK_BOT_HOSTS): TargetResult {
+export function targetFromQuery(
+  requestUrl: URL,
+  allowed: readonly AllowedTarget[] = GROK_BOT_TARGETS,
+): TargetResult {
   const raw = requestUrl.searchParams.get("url");
   const token = requestUrl.searchParams.get("token");
   if (!raw || !token) return { ok: false, status: 400 };
@@ -24,7 +34,15 @@ export function targetFromQuery(requestUrl: URL, hosts: readonly string[] = GROK
   } catch {
     return { ok: false, status: 400 };
   }
-  if (url.protocol !== "https:" || !hosts.includes(url.hostname)) return { ok: false, status: 403 };
+  const permitted = allowed.some(
+    (target) =>
+      url.hostname === target.host &&
+      url.pathname.startsWith(target.pathPrefix) &&
+      url.pathname.length > target.pathPrefix.length,
+  );
+  if (url.protocol !== "https:" || url.port !== "" || url.username !== "" || url.password !== "" || !permitted) {
+    return { ok: false, status: 403 };
+  }
   return {
     ok: true,
     target: {

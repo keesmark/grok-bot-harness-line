@@ -6,8 +6,7 @@ import { handleWebhook } from "../src/webhook";
 
 const encoder = new TextEncoder();
 const SECRET = "test-channel-secret";
-const HOSTS = ["grok-bot.example"];
-const TARGET = "https://grok-bot.example/webhook/abc";
+const TARGET = "https://api2.cursor.sh/automations/webhook/abc123";
 
 async function sign(body: string, secret = SECRET): Promise<string> {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -26,7 +25,7 @@ async function post(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (signature !== undefined) headers["X-Line-Signature"] = signature;
   const ctx = createExecutionContext();
-  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), env, ctx, HOSTS);
+  const response = await handleWebhook(new Request(url, { method: "POST", headers, body }), env, ctx);
   await waitOnExecutionContext(ctx);
   return response;
 }
@@ -61,17 +60,18 @@ describe("/webhook（forward）", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("Grok Bot 以外の宛先や https でない宛先は403で、流さない", async () => {
-    expect((await post(BODY, { url: webhookUrl({ url: "https://evil.example/x", token: "k" }) })).status).toBe(403);
-    expect((await post(BODY, { url: webhookUrl({ url: "https://grok-bot.example.evil.example/x", token: "k" }) })).status).toBe(403);
-    expect((await post(BODY, { url: webhookUrl({ url: "http://grok-bot.example/x", token: "k" }) })).status).toBe(403);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("宛先が決まっていなければ、どこにも流さない", async () => {
-    const ctx = createExecutionContext();
-    const request = new Request(webhookUrl(), { method: "POST", body: BODY });
-    expect((await handleWebhook(request, {}, ctx, [])).status).toBe(403);
+  it("Grok Bot の Webhook 以外の宛先は403で、流さない", async () => {
+    for (const target of [
+      "https://evil.example/automations/webhook/abc",
+      "https://api2.cursor.sh.evil.example/automations/webhook/abc",
+      "http://api2.cursor.sh/automations/webhook/abc",
+      "https://api2.cursor.sh/other/path",
+      "https://api2.cursor.sh/automations/webhook/",
+      "https://api2.cursor.sh:8443/automations/webhook/abc",
+      "https://user:pass@api2.cursor.sh/automations/webhook/abc",
+    ]) {
+      expect((await post(BODY, { url: webhookUrl({ url: target, token: "k" }) })).status, target).toBe(403);
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -102,7 +102,7 @@ describe("/webhook（forward）", () => {
   it("上限を超える本文は413", async () => {
     const ctx = createExecutionContext();
     const request = new Request(webhookUrl(), { method: "POST", headers: { "Content-Length": String(2 * 1024 * 1024) }, body: BODY });
-    expect((await handleWebhook(request, {}, ctx, HOSTS)).status).toBe(413);
+    expect((await handleWebhook(request, {}, ctx)).status).toBe(413);
   });
 
   it("POST 以外は405、知らないパスは404", async () => {

@@ -1,6 +1,6 @@
 // POST /webhook。?url=…&token=… の宛先に、本文をそのまま流す。何も保存しない。署名は CHANNEL_SECRET があるときだけ確かめる。
 import { BodyTooLargeError, readLimitedBody } from "./body";
-import { type Env, type ForwardTarget, targetFromQuery } from "./env";
+import { type AllowedTarget, type Env, type ForwardTarget, targetFromQuery } from "./env";
 import { hasSignatureShape, verifySignature } from "./signature";
 
 export const WEBHOOK_BODY_LIMIT = 1024 * 1024;
@@ -23,11 +23,11 @@ export async function handleWebhook(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
-  hosts?: readonly string[],
+  allowed?: readonly AllowedTarget[],
 ): Promise<Response> {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
   // URL にトークンが入るので、URL そのものはログに出さない。
-  const result = targetFromQuery(new URL(request.url), hosts);
+  const result = targetFromQuery(new URL(request.url), allowed);
   if (!result.ok) {
     console.warn("webhook: 転送先の指定が正しくない", { status: result.status });
     return new Response(null, { status: result.status });

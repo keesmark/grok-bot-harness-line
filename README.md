@@ -27,7 +27,8 @@ https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送�
 
 `url` は URL エンコードしてください。Worker は `token` を `Authorization: Bearer <送信キー>` に付け替えて、本文を LINE から届いたまま `url` に流します。
 
-- 流せる宛先は、コードに書いた Grok Bot のドメインだけです。ほかの宛先を指定すると 403 になり、どこにも流しません。
+- Grok Bot の Webhook の URL は `https://api2.cursor.sh/automations/webhook/…` の形です。
+- 流せる宛先は、この形の URL だけです（`src/env.ts` の `GROK_BOT_TARGETS`）。ほかの宛先を指定すると 403 になり、どこにも流しません。
 - 送信キーが URL に入るので、リクエストのログは残しません。この URL はチャットなどに貼らないでください。
 - 「検証」ボタンのようにイベントが空のものは流しません。
 - 流した先がエラーを返しても、LINE には 200 を返します。LINE は再送しないので、そのメッセージは LINE のチャットで確かめてください。

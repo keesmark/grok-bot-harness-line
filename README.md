@@ -1,49 +1,51 @@
 # grok-bot-harness-line
 
-LINE 公式アカウントの Webhook を、Grok Bot の Webhook に届けるための Cloudflare Workers のテンプレートです。
-LINE の Webhook は送信キーのヘッダーを付けられないので、この Worker が間に立ってキーを付け替えます。
-あなた自身の Cloudflare アカウント（無料プラン）で動きます。作者のサーバーは一切通りません。
+English | [日本語](README.ja.md)
+
+A Cloudflare Workers template that delivers webhooks from a LINE Official Account to a Grok Bot webhook.
+LINE webhooks cannot carry a custom key header, so this Worker sits in between and moves the key into one.
+It runs on your own Cloudflare account (the free plan is enough). Nothing passes through the author's servers.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/keesmark/grok-bot-harness-line)
 
-- 何も保存しません。届いた本文を、そのまま Grok Bot に流すだけです。
-- LINE へ送信する機能はありません。チャネルアクセストークンも持ちません。
-- デプロイ画面で入れる値はありません。
+- It stores nothing. It passes the request body to Grok Bot as received.
+- It cannot send messages to LINE and holds no channel access token.
+- There are no values to fill in on the deploy screen.
 
-## 準備するもの
+## What you need
 
-- Messaging API が使える LINE 公式アカウント（[LINE Developers コンソール](https://developers.line.biz/console/)）
-- Grok Bot の Webhook の URL と送信キー
-- Cloudflare のアカウント（無料プランで動きます）
-- GitHub のアカウント（ボタンを押すと、このリポジトリがあなたの GitHub に複製されます）
+- A LINE Official Account with the Messaging API enabled ([LINE Developers Console](https://developers.line.biz/console/))
+- Your Grok Bot webhook URL and key
+- A Cloudflare account (the free plan is enough)
+- A GitHub account (the button copies this repository into your GitHub)
 
-## つなぎ方
+## Connecting LINE
 
-デプロイできたら、LINE Developers コンソールの Webhook URL に次を貼り、「検証」を押して成功を確かめます。
+After deploying, paste the following into the Webhook URL field in the LINE Developers Console, then press "Verify" and check that it succeeds.
 
 ```
-https://<Worker の URL>/webhook?url=<Grok Bot の Webhook の URL>&token=<送信キー>
+https://<your Worker URL>/webhook?url=<Grok Bot webhook URL>&token=<key>
 ```
 
-`url` は URL エンコードしてください。Worker は `token` を `Authorization: Bearer <送信キー>` に付け替えて、本文を LINE から届いたまま `url` に流します。
+URL-encode `url`. The Worker sends `token` as `Authorization: Bearer <key>` and posts the body to `url` exactly as LINE sent it.
 
-- Grok Bot の Webhook の URL は `https://api2.cursor.sh/automations/webhook/…` の形です。
-- 流せる宛先は、この形の URL だけです（`src/env.ts` の `GROK_BOT_TARGETS`）。ほかの宛先を指定すると 403 になり、どこにも流しません。
-- 送信キーが URL に入るので、リクエストのログは残しません。この URL はチャットなどに貼らないでください。
-- 「検証」ボタンのようにイベントが空のものは流しません。
-- 流した先がエラーを返しても、LINE には 200 を返します。LINE は再送しないので、そのメッセージは LINE のチャットで確かめてください。
+- A Grok Bot webhook URL looks like `https://api2.cursor.sh/automations/webhook/…`.
+- Only URLs of that form are allowed as destinations (`GROK_BOT_TARGETS` in `src/env.ts`). Any other destination gets a 403 and nothing is forwarded.
+- The key is part of the URL, so request logs are turned off. Do not paste this URL into chats or other places.
+- Requests with no events, such as the "Verify" button, are not forwarded.
+- The Worker returns 200 to LINE even when the destination returns an error. LINE does not retry, so check that message in the LINE chat.
 
-### LINE の署名について
+### About the LINE signature
 
-この Worker は LINE の署名を確かめません。偽のメッセージを Grok Bot に届けるには送信キー（`token`）が要りますが、送信キーを知っている人は Worker を通さずに Grok Bot へ直接送れるので、Worker で確かめても守りが増えないためです。LINE の `X-Line-Signature` ヘッダーはそのまま Grok Bot に渡すので、必要なら Grok Bot 側で確かめられます。
+This Worker does not verify the LINE signature. Sending a fake message to Grok Bot through the Worker requires the key (`token`), and anyone with the key can call Grok Bot directly without the Worker, so verifying here adds no protection. The `X-Line-Signature` header is passed through to Grok Bot unchanged, so Grok Bot can verify it if needed.
 
-## セキュリティ
+## Security
 
-- 実行時の依存はありません。開発用の道具は版を固定し、ロックファイルを入れています。
-- 本文の大きさに上限（1MiB）をかけ、上限を超えたら読むのをやめます。
-- ログには本文・URL・鍵を出しません。
+- No runtime dependencies. Development tools are pinned to exact versions with a lockfile.
+- The request body is capped at 1 MiB, and reading stops once the cap is exceeded.
+- Logs never include the body, the URL, or the key.
 
-## 開発
+## Development
 
 ```sh
 npm ci
@@ -53,4 +55,4 @@ npm run dev
 
 ---
 
-LINE は LINE ヤフー株式会社の商標です。本リポジトリは LINE ヤフー株式会社の公式製品ではありません。
+LINE is a trademark of LY Corporation. This repository is not an official product of LY Corporation.

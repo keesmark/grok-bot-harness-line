@@ -84,7 +84,7 @@ npx wrangler secret put CHANNEL_SECRET_SHOP
 
 ## アップデートのしかた
 
-テンプレートの変更は [コミットの一覧](https://github.com/keesmark/line-webhook-relay/commits/main) で見られます。ふだんは更新しても Worker の URL と `CHANNEL_SECRET` は変わらないので、LINE の設定はそのまま使えます。ただし、Worker の名前が `grok-bot-line-relay` のときは、先に [名前が line-webhook-relay に変わったとき](#名前が-line-webhook-relay-に変わったとき) を見てください。合言葉 `RELAY_KEY` を使っていたときは、先に [RELAY_KEY から移るとき](#relay_key-から移るとき) を見てください。
+新しい版は [Releases](https://github.com/keesmark/line-webhook-relay/releases) に、変わったところと必要な作業を書いて出します。このリポジトリのページで「Watch」→「Custom」→「Releases」を選ぶと、出たときに GitHub から知らせが届きます。細かい変更は [コミットの一覧](https://github.com/keesmark/line-webhook-relay/commits/main) で見られます。ふだんは更新しても Worker の URL と `CHANNEL_SECRET` は変わらないので、LINE の設定はそのまま使えます。ただし、Worker の名前が `grok-bot-line-relay` のときは、先に [名前が line-webhook-relay に変わったとき](#名前が-line-webhook-relay-に変わったとき) を見てください。合言葉 `RELAY_KEY` を使っていたときは、先に [RELAY_KEY から移るとき](#relay_key-から移るとき) を見てください。
 
 フォークのページで「Sync fork」→「Update branch」を押します。押す前に、取り込まれるコミットの一覧に目を通してください。取り込むと、Cloudflare が自動でデプロイします。
 

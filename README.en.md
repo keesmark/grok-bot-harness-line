@@ -84,7 +84,7 @@ npx wrangler secret put CHANNEL_SECRET_SHOP
 
 ## Updating
 
-Changes to the template are listed in the [commit history](https://github.com/keesmark/line-webhook-relay/commits/main). Updating normally keeps your Worker URL and `CHANNEL_SECRET`, so the LINE settings stay as they are. The exception: if your Worker is still named `grok-bot-line-relay`, read [When the name changed to line-webhook-relay](#when-the-name-changed-to-line-webhook-relay) first. If you were using the `RELAY_KEY` passphrase, read [Moving from RELAY_KEY](#moving-from-relay_key) first.
+New versions are published under [Releases](https://github.com/keesmark/line-webhook-relay/releases), with what changed and anything you need to do. Choose "Watch" → "Custom" → "Releases" on this repository's page to get a GitHub notification when one comes out. Individual changes are listed in the [commit history](https://github.com/keesmark/line-webhook-relay/commits/main). Updating normally keeps your Worker URL and `CHANNEL_SECRET`, so the LINE settings stay as they are. The exception: if your Worker is still named `grok-bot-line-relay`, read [When the name changed to line-webhook-relay](#when-the-name-changed-to-line-webhook-relay) first. If you were using the `RELAY_KEY` passphrase, read [Moving from RELAY_KEY](#moving-from-relay_key) first.
 
 On your fork's page, press "Sync fork" → "Update branch". Read through the listed commits before pressing it. Cloudflare deploys the update automatically.
 
